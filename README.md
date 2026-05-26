@@ -18,6 +18,8 @@ Sản phẩm là một nền tảng mini học tập có thể tái sử dụng,
 - Lịch sử lượt chơi lưu trong `users/{uid}/attempts`
 - Thống kê cá nhân theo chủ đề từ lịch sử luyện tập
 - Quên mật khẩu qua Firebase Authentication
+- Phân quyền `player` và `admin`
+- Admin Panel: xem user, cấp/hạ quyền quản lý, xóa điểm leaderboard sai
 - Fallback leaderboard local nếu chưa cấu hình Firebase
 - Achievement sau mỗi lượt chơi
 - Analytics mini theo chủ đề sai/đúng
@@ -52,25 +54,48 @@ truy-tim-chan-ly/
 11. Chọn region gần Việt Nam nếu có.
 12. Vào tab `Rules` và dùng rule demo bên dưới.
 
-Rule demo cho bài thuyết trình:
+Rule phân quyền demo cho bài thuyết trình:
 
 ```js
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
     match /users/{userId} {
-      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+
+      allow create: if signedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.role == "player";
+
+      allow update: if signedIn() && (
+        (
+          request.auth.uid == userId &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["name", "className", "email", "xp", "best", "plays", "updatedAt"])
+        ) ||
+        isAdmin()
+      );
 
       match /attempts/{attemptId} {
-        allow read, create: if request.auth != null && request.auth.uid == userId;
+        allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+        allow create: if signedIn() && request.auth.uid == userId;
       }
     }
 
     match /leaderboard/{docId} {
       allow read: if true;
       allow create: if
-        request.auth != null &&
+        signedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.name is string &&
         request.resource.data.name.size() <= 28 &&
@@ -78,10 +103,27 @@ service cloud.firestore {
         request.resource.data.total is number &&
         request.resource.data.percent is number &&
         request.resource.data.elapsed is number;
+
+      allow delete: if isAdmin();
     }
   }
 }
 ```
+
+Tạo tài khoản quản lý đầu tiên:
+
+1. Đăng ký tài khoản trên web.
+2. Vào Firebase Console -> Firestore Database -> collection `users`.
+3. Mở document có UID của tài khoản đó.
+4. Thêm/sửa field `role` thành string `admin`.
+5. Refresh web, nút `Quản lý` sẽ xuất hiện.
+
+Phân quyền:
+
+- Người chơi: chơi quiz, sửa tên/lớp của chính mình, tạo lịch sử chơi, tạo điểm leaderboard.
+- Người chơi không được: xem danh sách user, đổi quyền, xóa leaderboard, sửa câu hỏi.
+- Quản lý: xem dashboard, đổi role user, xóa điểm leaderboard sai.
+- Ngân hàng câu hỏi nằm trong `script.js`, người chơi không sửa được qua giao diện; muốn sửa phải có quyền sửa repository/deploy.
 
 Lưu ý: rule này phù hợp demo/học tập. Nếu dùng sản phẩm thật lâu dài, nên thêm Cloud Functions để xác thực điểm số và chống spam.
 

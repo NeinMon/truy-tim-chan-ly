@@ -94,6 +94,7 @@ const levelView = document.querySelector("#levelView");
 const xpView = document.querySelector("#xpView");
 const bestView = document.querySelector("#bestView");
 const themeToggle = document.querySelector("#themeToggle");
+const adminNav = document.querySelector("#adminNav");
 
 let profile = load("truthProfile", { name: "Khách", className: "", xp: 0, best: 0, plays: 0 });
 let leaderboard = load("truthLeaderboard", []);
@@ -174,10 +175,15 @@ function getDefaultProfile(user = null) {
     name: user?.displayName || user?.email?.split("@")[0] || "Khách",
     className: "",
     email: user?.email || "",
+    role: "player",
     xp: 0,
     best: 0,
     plays: 0
   };
+}
+
+function isAdmin() {
+  return profile.role === "admin";
 }
 
 async function loadCloudProfile(user) {
@@ -319,6 +325,43 @@ async function getAttemptEntries() {
   return load("truthAttempts", []).slice(0, 12);
 }
 
+async function getAdminData() {
+  if (!db || !firebaseApi || !isAdmin()) {
+    return { users: [], leaderboardEntries: [] };
+  }
+
+  const [usersSnapshot, leaderboardSnapshot] = await Promise.all([
+    firebaseApi.getDocs(
+      firebaseApi.query(firebaseApi.collection(db, "users"), firebaseApi.limit(100))
+    ),
+    firebaseApi.getDocs(
+      firebaseApi.query(
+        firebaseApi.collection(db, "leaderboard"),
+        firebaseApi.orderBy("percent", "desc"),
+        firebaseApi.limit(50)
+      )
+    )
+  ]);
+
+  return {
+    users: usersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+    leaderboardEntries: leaderboardSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  };
+}
+
+async function updateUserRole(userId, role) {
+  if (!db || !firebaseApi || !isAdmin()) return;
+  await firebaseApi.updateDoc(firebaseApi.doc(db, "users", userId), {
+    role,
+    updatedAt: firebaseApi.serverTimestamp()
+  });
+}
+
+async function deleteLeaderboardEntry(entryId) {
+  if (!db || !firebaseApi || !isAdmin()) return;
+  await firebaseApi.deleteDoc(firebaseApi.doc(db, "leaderboard", entryId));
+}
+
 function getAggregateStats(attempts) {
   const aggregate = {};
 
@@ -397,6 +440,7 @@ function syncHud() {
   levelView.textContent = getLevel(profile.xp);
   xpView.textContent = profile.xp;
   bestView.textContent = `${profile.best}%`;
+  if (adminNav) adminNav.hidden = !isAdmin();
 }
 
 function setView(view) {
@@ -405,6 +449,7 @@ function setView(view) {
     unsubscribeLeaderboard();
     unsubscribeLeaderboard = null;
   }
+  if (view === "admin") return renderAdmin();
   if (view === "profile") return renderProfile();
   if (view === "leaderboard") return renderLeaderboard();
   renderHome();
@@ -979,6 +1024,112 @@ function renderLeaderboardEntries(entries) {
       save("truthLeaderboard", leaderboard);
       renderLeaderboard();
     });
+  }
+}
+
+async function renderAdmin() {
+  currentView = "admin";
+
+  if (!currentUser || !isAdmin()) {
+    app.innerHTML = `
+      <section class="panel">
+        <h2>Khu vực quản lý</h2>
+        <p class="muted">Bạn cần đăng nhập bằng tài khoản quản lý để truy cập phần này.</p>
+        <div class="row-actions">
+          <button class="primary-btn" id="goProfile">Đăng nhập</button>
+        </div>
+      </section>
+    `;
+    document.querySelector("#goProfile").addEventListener("click", renderProfile);
+    return;
+  }
+
+  app.innerHTML = `
+    <section class="panel">
+      <h2>Khu vực quản lý</h2>
+      <p class="muted">Đang tải dữ liệu quản trị...</p>
+    </section>
+  `;
+
+  try {
+    const { users, leaderboardEntries } = await getAdminData();
+    const playerCount = users.filter((user) => user.role !== "admin").length;
+    const adminCount = users.filter((user) => user.role === "admin").length;
+
+    app.innerHTML = `
+      <div class="admin-grid">
+        <section class="panel">
+          <p class="eyebrow">Admin Dashboard</p>
+          <h2>Quản lý nền tảng</h2>
+          <div class="stats-grid">
+            <div class="stat-card"><span>Tài khoản</span><strong>${users.length}</strong></div>
+            <div class="stat-card"><span>Người chơi</span><strong>${playerCount}</strong></div>
+            <div class="stat-card"><span>Quản lý</span><strong>${adminCount}</strong></div>
+            <div class="stat-card"><span>Điểm đã ghi</span><strong>${leaderboardEntries.length}</strong></div>
+          </div>
+          <div class="admin-note">
+            <strong>Người chơi không được can thiệp:</strong>
+            <p class="muted">Không xem danh sách user, không đổi vai trò, không xóa leaderboard, không sửa ngân hàng câu hỏi. Firestore Rules sẽ chặn các thao tác này kể cả khi mở DevTools.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Người dùng</h2>
+          <ul class="mini-list">
+            ${users.length ? users.map((user) => `
+              <li class="leader-row">
+                <strong>${user.role === "admin" ? "QL" : "SV"}</strong>
+                <span>
+                  <strong>${escapeHtml(user.name || user.email || "Người chơi")}</strong><br>
+                  <span class="muted">${escapeHtml(user.email || "")} · ${escapeHtml(user.className || "Chưa có lớp/nhóm")} · ${user.plays || 0} lượt</span>
+                </span>
+                ${user.id === currentUser.uid
+                  ? `<span class="chip good">Bạn</span>`
+                  : `<button class="secondary-btn role-btn" data-user="${user.id}" data-role="${user.role === "admin" ? "player" : "admin"}">${user.role === "admin" ? "Hạ quyền" : "Cấp QL"}</button>`
+                }
+              </li>
+            `).join("") : `<li><span></span><span>Chưa có user.</span><span></span></li>`}
+          </ul>
+        </section>
+
+        <section class="panel admin-wide">
+          <h2>Duyệt leaderboard</h2>
+          <ul class="mini-list">
+            ${leaderboardEntries.length ? leaderboardEntries.map((entry, index) => `
+              <li class="leader-row">
+                <strong>#${index + 1}</strong>
+                <span>
+                  <strong>${escapeHtml(entry.name || "Người chơi")} · ${entry.percent}%</strong><br>
+                  <span class="muted">${escapeHtml(entry.mode || "")} · ${escapeHtml(entry.rank || "")} · ${entry.elapsed || 0}s · ${escapeHtml(entry.date || "")}</span>
+                </span>
+                <button class="secondary-btn danger-btn delete-score" data-entry="${entry.id}">Xóa</button>
+              </li>
+            `).join("") : `<li><span></span><span>Chưa có điểm leaderboard.</span><span></span></li>`}
+          </ul>
+        </section>
+      </div>
+    `;
+
+    document.querySelectorAll(".role-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await updateUserRole(button.dataset.user, button.dataset.role);
+        renderAdmin();
+      });
+    });
+
+    document.querySelectorAll(".delete-score").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await deleteLeaderboardEntry(button.dataset.entry);
+        renderAdmin();
+      });
+    });
+  } catch (error) {
+    app.innerHTML = `
+      <section class="panel">
+        <h2>Khu vực quản lý</h2>
+        <p class="muted">Không tải được dữ liệu quản trị. Kiểm tra Firestore Rules và quyền admin của tài khoản này.</p>
+      </section>
+    `;
   }
 }
 
