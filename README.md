@@ -10,7 +10,7 @@ Sản phẩm là một nền tảng mini học tập có thể tái sử dụng,
 - 5 chế độ: AI nói thật hay sai, Fake News Hunter, Social Media Investigation, Truth Detective, Philosophy Challenge
 - Ngân hàng 50 câu hỏi chia 5 chủ đề
 - Random 10 câu mỗi lượt chơi
-- Hồ sơ người chơi, cấp độ, XP
+- Hồ sơ người chơi, lịch sử luyện tập, điểm gần nhất
 - Đăng ký/đăng nhập bằng Firebase Authentication
 - Hồ sơ người chơi lưu ở Firestore theo tài khoản
 - Leaderboard public bằng Firebase Firestore
@@ -81,7 +81,7 @@ service cloud.firestore {
         (
           request.auth.uid == userId &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(["name", "className", "email", "xp", "best", "plays", "updatedAt"])
+            .hasOnly(["name", "className", "email", "plays", "lastScore", "updatedAt"])
         ) ||
         isAdmin()
       );

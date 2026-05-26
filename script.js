@@ -90,13 +90,13 @@ const MODES = [
 
 const app = document.querySelector("#app");
 const playerNameView = document.querySelector("#playerNameView");
-const levelView = document.querySelector("#levelView");
-const xpView = document.querySelector("#xpView");
-const bestView = document.querySelector("#bestView");
+const roleView = document.querySelector("#roleView");
+const playsView = document.querySelector("#playsView");
+const lastScoreView = document.querySelector("#lastScoreView");
 const themeToggle = document.querySelector("#themeToggle");
 const adminNav = document.querySelector("#adminNav");
 
-let profile = load("truthProfile", { name: "Khách", className: "", xp: 0, best: 0, plays: 0 });
+let profile = load("truthProfile", { name: "Khách", className: "", role: "player", plays: 0, lastScore: 0 });
 let leaderboard = load("truthLeaderboard", []);
 let selectedMode = MODES[3].id;
 let selectedCategory = "all";
@@ -135,7 +135,7 @@ async function initFirebase() {
         if (user) {
           await loadCloudProfile(user);
         } else {
-          profile = load("truthProfile", { name: "Khách", className: "", xp: 0, best: 0, plays: 0 });
+          profile = load("truthProfile", { name: "Khách", className: "", role: "player", plays: 0, lastScore: 0 });
         }
       } catch (error) {
         console.warn("Could not load cloud profile, using local profile.", error);
@@ -176,9 +176,8 @@ function getDefaultProfile(user = null) {
     className: "",
     email: user?.email || "",
     role: "player",
-    xp: 0,
-    best: 0,
-    plays: 0
+    plays: 0,
+    lastScore: 0
   };
 }
 
@@ -217,9 +216,8 @@ async function saveCloudProfile() {
         name: profile.name,
         className: profile.className,
         email: currentUser.email || profile.email || "",
-        xp: profile.xp,
-        best: profile.best,
         plays: profile.plays,
+        lastScore: profile.lastScore || 0,
         updatedAt: firebaseApi.serverTimestamp()
       },
       { merge: true }
@@ -273,7 +271,7 @@ async function saveLeaderboardResult(result) {
   save("truthLeaderboard", leaderboard);
 }
 
-async function saveAttempt(result, xpGain) {
+async function saveAttempt(result) {
   const attempt = {
     userId: currentUser?.uid || "local",
     name: result.name.slice(0, 28),
@@ -283,7 +281,6 @@ async function saveAttempt(result, xpGain) {
     percent: result.percent,
     rank: result.rank,
     elapsed: result.elapsed,
-    xpGain,
     date: result.date,
     categoryStats: getCategoryStats(quiz.answers),
     createdAtMs: Date.now()
@@ -420,14 +417,6 @@ function escapeHtml(value) {
   }[char]));
 }
 
-function getLevel(xp) {
-  if (xp >= 700) return "LV5";
-  if (xp >= 420) return "LV4";
-  if (xp >= 220) return "LV3";
-  if (xp >= 80) return "LV2";
-  return "LV1";
-}
-
 function getRank(scorePercent) {
   if (scorePercent >= 90) return "Nhà truy tìm chân lý";
   if (scorePercent >= 70) return "Bậc thầy lý tính";
@@ -437,9 +426,9 @@ function getRank(scorePercent) {
 
 function syncHud() {
   playerNameView.textContent = profile.name || "Khách";
-  levelView.textContent = getLevel(profile.xp);
-  xpView.textContent = profile.xp;
-  bestView.textContent = `${profile.best}%`;
+  roleView.textContent = isAdmin() ? "Quản lý" : "Người chơi";
+  playsView.textContent = profile.plays || 0;
+  lastScoreView.textContent = `${profile.lastScore || 0}%`;
   if (adminNav) adminNav.hidden = !isAdmin();
 }
 
@@ -624,7 +613,6 @@ function chooseAnswer(answerIndex) {
 async function finishQuiz() {
   const elapsed = Math.max(1, Math.round((Date.now() - quiz.startedAt) / 1000));
   const scorePercent = percent(quiz.score, quiz.questions.length);
-  const xpGain = quiz.score * 12 + (scorePercent >= 80 ? 25 : 0);
   const result = {
     name: profile.name || "Khách",
     mode: quiz.mode.name,
@@ -636,15 +624,14 @@ async function finishQuiz() {
     date: new Date().toLocaleDateString("vi-VN")
   };
 
-  profile.xp += xpGain;
-  profile.best = Math.max(profile.best, scorePercent);
   profile.plays += 1;
+  profile.lastScore = scorePercent;
   await saveCloudProfile();
 
   await saveLeaderboardResult(result);
-  await saveAttempt(result, xpGain);
+  await saveAttempt(result);
   syncHud();
-  renderResult(result, xpGain);
+  renderResult(result);
 }
 
 function getAchievements(result) {
@@ -670,7 +657,7 @@ function getCategoryStats(answers) {
   }, {});
 }
 
-function renderResult(result, xpGain) {
+function renderResult(result) {
   currentView = "result";
   const achievements = getAchievements(result);
   const categoryStats = getCategoryStats(quiz.answers);
@@ -685,7 +672,7 @@ function renderResult(result, xpGain) {
           <div class="stat-card"><span>Điểm</span><strong>${result.score}/${result.total}</strong></div>
           <div class="stat-card"><span>Tỷ lệ đúng</span><strong>${result.percent}%</strong></div>
           <div class="stat-card"><span>Thời gian</span><strong>${result.elapsed}s</strong></div>
-          <div class="stat-card"><span>XP nhận</span><strong>+${xpGain}</strong></div>
+          <div class="stat-card"><span>Nhận xét</span><strong>${result.percent >= 70 ? "Ổn" : "Cần ôn"}</strong></div>
         </div>
 
         <h3 style="margin-top: 22px;">Achievement</h3>
@@ -834,14 +821,14 @@ async function renderProfile() {
       ? `
         <div class="panel">
           <h2>Tài khoản</h2>
-          <p class="muted">Đã đăng nhập bằng <strong>${escapeHtml(currentUser.email || "")}</strong>. Hồ sơ, XP và bảng xếp hạng sẽ được đồng bộ.</p>
+          <p class="muted">Đã đăng nhập bằng <strong>${escapeHtml(currentUser.email || "")}</strong>. Hồ sơ, lịch sử luyện tập và bảng xếp hạng sẽ được đồng bộ.</p>
           <button class="secondary-btn" id="logoutBtn">Đăng xuất</button>
         </div>
       `
       : `
         <div class="panel">
           <h2>Đăng nhập / Đăng ký</h2>
-          <p class="muted">Đăng nhập để lưu hồ sơ, XP và điểm lên bảng xếp hạng chung.</p>
+          <p class="muted">Đăng nhập để lưu hồ sơ, lịch sử luyện tập và điểm lên bảng xếp hạng chung.</p>
           <div class="profile-form">
             <label class="field">
               <span>Email</span>
@@ -883,9 +870,9 @@ async function renderProfile() {
         <div class="panel" style="margin-top: 14px;">
           <h2>Tiến trình</h2>
           <div class="stats-grid">
-            <div class="stat-card"><span>Cấp độ</span><strong>${getLevel(profile.xp)}</strong></div>
-            <div class="stat-card"><span>XP</span><strong>${profile.xp}</strong></div>
-            <div class="stat-card"><span>Best score</span><strong>${profile.best}%</strong></div>
+            <div class="stat-card"><span>Vai trò</span><strong>${isAdmin() ? "Quản lý" : "Người chơi"}</strong></div>
+            <div class="stat-card"><span>Điểm gần nhất</span><strong>${profile.lastScore || 0}%</strong></div>
+            <div class="stat-card"><span>Tình trạng</span><strong>${(profile.lastScore || 0) >= 70 ? "Ổn" : "Cần luyện"}</strong></div>
             <div class="stat-card"><span>Lượt chơi</span><strong>${profile.plays}</strong></div>
           </div>
         </div>
@@ -908,7 +895,7 @@ async function renderProfile() {
                   <strong>${attempt.mode}</strong><br>
                   <span class="muted">${attempt.rank} · ${attempt.score}/${attempt.total} · ${attempt.elapsed}s · ${attempt.date}</span>
                 </span>
-                <span class="chip good">+${attempt.xpGain || 0} XP</span>
+                <span class="chip">${attempt.percent >= 70 ? "Đạt" : "Ôn lại"}</span>
               </li>
             `).join("") : `<li><span></span><span>Chưa có lịch sử chơi.</span><span></span></li>`}
           </ul>
@@ -951,7 +938,7 @@ async function renderProfile() {
   if (logoutBtn) logoutBtn.addEventListener("click", async () => {
     await authApi.signOut(auth);
     currentUser = null;
-    profile = load("truthProfile", { name: "Khách", className: "", xp: 0, best: 0, plays: 0 });
+    profile = load("truthProfile", { name: "Khách", className: "", role: "player", plays: 0, lastScore: 0 });
     syncHud();
     renderProfile();
   });
