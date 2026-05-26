@@ -96,7 +96,7 @@ const STUDY_PATH = ["sensory", "rational", "practice", "truth"];
 const MODES = [
   { id: "practice", name: "Luyện tập tổng hợp", desc: "Làm 10 câu ngẫu nhiên để ôn toàn bộ quá trình nhận thức và chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
   { id: "case", name: "Vụ án nhận thức", desc: "Đi theo 5 bước điều tra: quan sát, thu thập dữ kiện, phân tích, kiểm nghiệm và kết luận.", pool: ["sensory", "rational", "practice", "truth", "life"] },
-  { id: "test", name: "Kiểm tra 5 phút", desc: "Làm bài có đồng hồ đếm ngược, phù hợp dùng nhanh trong giờ thuyết trình.", pool: ["sensory", "rational", "practice", "truth", "life"], timed: true }
+  { id: "test", name: "Kiểm tra 5 phút", desc: "Làm bài có đồng hồ đếm ngược để tự đánh giá mức độ nắm kiến thức.", pool: ["sensory", "rational", "practice", "truth", "life"], timed: true }
 ];
 
 const CASES = [
@@ -232,7 +232,7 @@ async function initFirebase() {
 }
 
 function getLeaderboardLabel() {
-  return leaderboardMode === "firebase" ? "Bảng xếp hạng chung" : "Bảng xếp hạng trên máy này";
+  return leaderboardMode === "firebase" ? "Bảng xếp hạng chung" : "Bảng xếp hạng cá nhân";
 }
 
 function load(key, fallback) {
@@ -1036,7 +1036,7 @@ function renderResult(result) {
         ${renderKnowledgeMap(categoryStats)}
         <h3 style="margin-top: 18px;">Thống kê theo phần đã làm</h3>
         ${renderCategoryMeters(categoryStats)}
-        <p class="muted" style="margin-top: 18px;">Bản đồ kiến thức bám 4 bước lý thuyết của bài thuyết trình. Phần vận dụng đời sống dùng để kiểm tra khả năng áp dụng 4 bước đó vào tình huống thực tế.</p>
+        <p class="muted" style="margin-top: 18px;">Bản đồ kiến thức bám 4 bước lý thuyết của bài học. Phần vận dụng đời sống dùng để kiểm tra khả năng áp dụng 4 bước đó vào tình huống thực tế.</p>
       </aside>
     </div>
   `;
@@ -1108,13 +1108,13 @@ async function handleAuth(action) {
       "auth/invalid-credential": "Email hoặc mật khẩu chưa đúng.",
       "auth/user-not-found": "Chưa có tài khoản với email này.",
       "auth/wrong-password": "Mật khẩu chưa đúng.",
-      "auth/operation-not-allowed": "Firebase Authentication chưa bật Email/Password.",
-      "auth/configuration-not-found": "Firebase Authentication chưa được khởi tạo đúng cho project này.",
-      "auth/network-request-failed": "Không kết nối được Firebase. Kiểm tra mạng hoặc chặn trình duyệt.",
-      "auth/too-many-requests": "Firebase đang tạm chặn do thử quá nhiều lần. Đợi một lát rồi thử lại."
+      "auth/operation-not-allowed": "Chức năng đăng nhập bằng email chưa được bật.",
+      "auth/configuration-not-found": "Chức năng đăng nhập chưa được cấu hình hoàn chỉnh.",
+      "auth/network-request-failed": "Không kết nối được hệ thống lưu dữ liệu. Kiểm tra mạng hoặc chặn trình duyệt.",
+      "auth/too-many-requests": "Hệ thống đang tạm chặn do thử quá nhiều lần. Đợi một lát rồi thử lại."
     };
     if (message) {
-      message.textContent = friendly[error.code] || `Không xử lý được tài khoản. Mã lỗi: ${error.code || "unknown"}`;
+      message.textContent = friendly[error.code] || "Không xử lý được tài khoản. Vui lòng thử lại sau.";
     }
   }
 }
@@ -1144,8 +1144,8 @@ async function renderProfile() {
   const authPanel = !isCloudReady
     ? `
       <div class="panel">
-        <h2>Tài khoản Firebase</h2>
-        <p class="muted">Firebase chưa sẵn sàng, hồ sơ đang lưu local trên trình duyệt này.</p>
+        <h2>Tài khoản</h2>
+        <p class="muted">Chưa thể đồng bộ tài khoản, hồ sơ đang lưu trên trình duyệt này.</p>
       </div>
     `
     : currentUser
@@ -1319,7 +1319,7 @@ function renderLeaderboardEntries(entries) {
       <div class="chip-row">
         <span class="chip ${leaderboardMode === "firebase" ? "good" : "warn"}">${getLeaderboardLabel()}</span>
         <span class="chip">Top 10 kết quả</span>
-        ${db ? `<span class="chip good">Realtime</span>` : ""}
+        ${db ? `<span class="chip good">Tự cập nhật</span>` : ""}
       </div>
       <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này dùng chung cho mọi người khi đăng nhập và làm bài." : "Bảng điểm này chỉ lưu trên trình duyệt hiện tại."}</p>
       <ul class="mini-list" style="margin-top: 18px;">
@@ -1372,7 +1372,7 @@ async function renderAdmin() {
   app.innerHTML = `
     <section class="panel">
       <h2>Khu vực quản lý</h2>
-      <p class="muted">Đang tải dữ liệu quản trị...</p>
+      <p class="muted">Đang tải dữ liệu quản lý...</p>
     </section>
   `;
 
@@ -1384,7 +1384,7 @@ async function renderAdmin() {
     app.innerHTML = `
       <div class="admin-grid">
         <section class="panel">
-          <p class="eyebrow">Admin Dashboard</p>
+          <p class="eyebrow">Khu quản lý</p>
           <h2>Quản lý nền tảng</h2>
           <div class="stats-grid">
             <div class="stat-card"><span>Tài khoản</span><strong>${users.length}</strong></div>
@@ -1395,7 +1395,7 @@ async function renderAdmin() {
           </div>
           <div class="admin-note">
             <strong>Người học không được can thiệp:</strong>
-            <p class="muted">Không xem danh sách tài khoản, không đổi vai trò, không xóa bảng xếp hạng, không sửa ngân hàng câu hỏi. Firestore Rules sẽ chặn các thao tác này kể cả khi mở DevTools.</p>
+            <p class="muted">Không xem danh sách tài khoản, không đổi vai trò, không xóa bảng xếp hạng, không sửa ngân hàng câu hỏi. Hệ thống phân quyền sẽ chặn các thao tác không hợp lệ.</p>
           </div>
         </section>
 
@@ -1433,7 +1433,7 @@ async function renderAdmin() {
             <button class="primary-btn" id="saveQuestionBtn">Lưu câu hỏi</button>
             <button class="secondary-btn" id="resetQuestionFormBtn">Nhập câu mới</button>
           </div>
-          <p class="muted" style="margin-top: 12px;">Câu hỏi admin thêm sẽ lưu trên Firestore và được đưa vào ngân hàng câu hỏi khi người học làm bài.</p>
+          <p class="muted" style="margin-top: 12px;">Câu hỏi quản lý thêm sẽ được đưa vào ngân hàng câu hỏi khi người học làm bài.</p>
           <ul class="mini-list" style="margin-top: 18px;">
             ${questions.length ? questions.map((question) => `
               <li class="leader-row">
@@ -1537,7 +1537,7 @@ async function renderAdmin() {
     app.innerHTML = `
       <section class="panel">
         <h2>Khu vực quản lý</h2>
-        <p class="muted">Không tải được dữ liệu quản trị. Kiểm tra Firestore Rules và quyền admin của tài khoản này.</p>
+        <p class="muted">Không tải được dữ liệu quản lý. Kiểm tra quyền của tài khoản này rồi thử lại.</p>
       </section>
     `;
   }
