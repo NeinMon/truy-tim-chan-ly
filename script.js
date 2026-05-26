@@ -98,15 +98,74 @@ const MODES = [
   { id: "fake", name: "Săn tin giả", desc: "Luyện quy trình phát hiện fake news: nhận diện dấu hiệu cảm tính, phân tích dữ kiện, kiểm tra thực tế.", pool: ["sensory", "rational", "practice", "life"] },
   { id: "social", name: "Điều tra mạng xã hội", desc: "Xử lý các tình huống viral, lượt share, bình luận số đông và tin đồn trên mạng.", pool: ["sensory", "life", "truth"] },
   { id: "detective", name: "Thám tử chân lý", desc: "Chế độ tổng hợp: đi đủ lộ trình từ nhận thức cảm tính đến lý tính, thực tiễn và chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
-  { id: "case", name: "Vụ án nhận thức", desc: "Mỗi lượt là một hồ sơ điều tra: tin AI, tin y tế, mạng xã hội hoặc review giả.", pool: ["sensory", "rational", "practice", "truth", "life"] },
+  { id: "case", name: "Vụ án nhận thức", desc: "Đi theo 5 bước điều tra: quan sát, thu thập dữ kiện, phân tích, kiểm nghiệm và kết luận.", pool: ["sensory", "rational", "practice", "truth", "life"] },
   { id: "challenge", name: "Thử thách triết học", desc: "Kiểm tra nhanh kiến thức lý thuyết trọng tâm trong cả 5 nhóm câu hỏi.", pool: ["sensory", "rational", "practice", "truth"] }
 ];
 
 const CASES = [
-  "Hồ sơ AI: Một câu trả lời nghe rất tự tin nhưng chưa rõ nguồn.",
-  "Hồ sơ y tế: Một mẹo sức khỏe lan truyền nhanh trong nhóm chat.",
-  "Hồ sơ mạng xã hội: Một video viral khiến nhiều người tin ngay.",
-  "Hồ sơ review giả: Một đánh giá cực đoan nhưng thiếu bằng chứng."
+  {
+    title: "Hồ sơ AI",
+    claim: "AI khẳng định: Con người chỉ sử dụng 10% bộ não.",
+    context: "Một bài đăng trích câu trả lời AI, nhận được nhiều chia sẻ và bình luận tin tưởng."
+  },
+  {
+    title: "Hồ sơ y tế",
+    claim: "Uống nước muối mỗi sáng có thể chữa hầu hết bệnh thường gặp.",
+    context: "Thông tin được lan truyền trong nhóm chat lớp với giọng điệu rất chắc chắn."
+  },
+  {
+    title: "Hồ sơ mạng xã hội",
+    claim: "Một video viral chứng minh học triết không có giá trị thực tế.",
+    context: "Video có nhiều lượt xem, nhiều bình luận đồng tình nhưng không dẫn nguồn."
+  },
+  {
+    title: "Hồ sơ review giả",
+    claim: "Một review 1 sao kết luận toàn bộ dịch vụ là lừa đảo.",
+    context: "Review có lời lẽ mạnh, ảnh chụp mờ và không có bằng chứng đối chiếu."
+  }
+];
+
+const CASE_STEPS = [
+  {
+    title: "Bước 1: Quan sát hiện tượng",
+    category: "sensory",
+    question: "Ở bước đầu tiên, thái độ phù hợp nhất là gì?",
+    options: ["Tin ngay vì thông tin viral", "Chia sẻ để hỏi ý kiến", "Ghi nhận thông tin và giữ thái độ nghi ngờ", "Bác bỏ ngay lập tức"],
+    answer: 2,
+    explanation: "Đây là giai đoạn tiếp xúc ban đầu với hiện tượng. Ta chưa đủ cơ sở kết luận đúng/sai."
+  },
+  {
+    title: "Bước 2: Thu thập dữ kiện",
+    category: "sensory",
+    question: "Dữ kiện nào cần được ưu tiên kiểm tra?",
+    options: ["Số lượt thích", "Nguồn gốc, bằng chứng và bối cảnh", "Bình luận cảm xúc", "Cách viết có vẻ tự tin"],
+    answer: 1,
+    explanation: "Dữ kiện cảm tính là chất liệu ban đầu để chuyển sang phân tích lý tính."
+  },
+  {
+    title: "Bước 3: Phân tích lý tính",
+    category: "rational",
+    question: "Sau khi có dữ kiện, thao tác nào thể hiện nhận thức lý tính?",
+    options: ["Chọn theo cảm giác", "Đối chiếu nguồn và phân tích logic", "Tin theo số đông", "Dừng lại ở hình ảnh ban đầu"],
+    answer: 1,
+    explanation: "Nhận thức lý tính dùng khái niệm, phán đoán và suy lý để tìm bản chất."
+  },
+  {
+    title: "Bước 4: Kiểm nghiệm thực tiễn",
+    category: "practice",
+    question: "Điều gì giúp kết luận đáng tin hơn?",
+    options: ["Cảm giác cá nhân", "Kiểm chứng bằng nguồn đáng tin và thực tế", "Một bình luận nổi bật", "AI trả lời tự tin"],
+    answer: 1,
+    explanation: "Thực tiễn là tiêu chuẩn kiểm nghiệm chân lý, giúp xác nhận hoặc bác bỏ nhận thức."
+  },
+  {
+    title: "Bước 5: Kết luận chân lý",
+    category: "truth",
+    question: "Khi nào kết luận có thể xem là gần với chân lý hơn?",
+    options: ["Khi được nhiều người thích", "Khi phù hợp hiện thực khách quan và được kiểm nghiệm", "Khi nghe hợp lý", "Khi được lặp lại nhiều lần"],
+    answer: 1,
+    explanation: "Chân lý là tri thức phù hợp với hiện thực khách quan và được thực tiễn kiểm nghiệm."
+  }
 ];
 
 const app = document.querySelector("#app");
@@ -195,7 +254,6 @@ function getDefaultProfile(user = null) {
   return {
     name: user?.displayName || user?.email?.split("@")[0] || "Khách",
     className: "",
-    classCode: "",
     email: user?.email || "",
     role: "player",
     plays: 0,
@@ -237,7 +295,6 @@ async function saveCloudProfile() {
       {
         name: profile.name,
         className: profile.className,
-        classCode: profile.classCode || "",
         email: currentUser.email || profile.email || "",
         plays: profile.plays,
         lastScore: profile.lastScore || 0,
@@ -318,7 +375,6 @@ async function saveLeaderboardResult(result) {
   const normalizedResult = {
     name: result.name.slice(0, 28),
     className: (profile.className || "").slice(0, 36),
-    classCode: (profile.classCode || "").toUpperCase().slice(0, 20),
     userId: currentUser?.uid || "local",
     mode: result.mode,
     score: result.score,
@@ -354,7 +410,6 @@ async function saveAttempt(result) {
   const attempt = {
     userId: currentUser?.uid || "local",
     name: result.name.slice(0, 28),
-    classCode: (profile.classCode || "").toUpperCase().slice(0, 20),
     mode: result.mode,
     score: result.score,
     total: result.total,
@@ -526,7 +581,6 @@ async function getLeaderboardEntries() {
       );
       return snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter((item) => !profile.classCode || item.classCode === profile.classCode)
         .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
         .slice(0, 10);
     } catch (error) {
@@ -644,10 +698,6 @@ function renderHome() {
             ${Object.entries(CATEGORIES).map(([id, name]) => `<option value="${id}" ${selectedCategory === id ? "selected" : ""}>${name}</option>`).join("")}
           </select>
         </label>
-        <label class="field">
-          <span>Mã lớp/phòng học</span>
-          <input id="classCodeInput" value="${escapeHtml(profile.classCode || "")}" maxlength="20" placeholder="Ví dụ: MLN01">
-        </label>
         <label class="field inline-field">
           <span>Thi nhanh 5 phút</span>
           <input id="timedModeInput" type="checkbox" ${timedMode ? "checked" : ""}>
@@ -665,11 +715,6 @@ function renderHome() {
   document.querySelector("#categorySelect").addEventListener("change", (event) => {
     selectedCategory = event.target.value;
   });
-  document.querySelector("#classCodeInput").addEventListener("change", async (event) => {
-    profile.classCode = event.target.value.trim().toUpperCase();
-    await saveCloudProfile();
-    syncHud();
-  });
   document.querySelector("#timedModeInput").addEventListener("change", (event) => {
     timedMode = event.target.checked;
   });
@@ -681,6 +726,12 @@ function renderHome() {
 function startQuiz() {
   currentView = "quiz";
   const mode = MODES.find((item) => item.id === selectedMode);
+
+  if (mode.id === "case") {
+    startCaseInvestigation(mode);
+    return;
+  }
+
   let pool = questionBank.filter((question) => mode.pool.includes(question.category));
 
   if (selectedCategory !== "all") {
@@ -695,9 +746,34 @@ function startQuiz() {
     answers: [],
     startedAt: Date.now(),
     deadline: timedMode ? Date.now() + 5 * 60 * 1000 : null,
-    caseText: mode.id === "case" ? CASES[Math.floor(Math.random() * CASES.length)] : ""
+    caseFile: null
   };
 
+  startTimer();
+  renderQuestion();
+}
+
+function startCaseInvestigation(mode) {
+  const caseFile = CASES[Math.floor(Math.random() * CASES.length)];
+  quiz = {
+    mode,
+    questions: CASE_STEPS.map((step, index) => normalizeQuestion({
+      id: `case-${index}`,
+      category: step.category,
+      question: step.question,
+      options: step.options,
+      answer: step.answer,
+      explanation: step.explanation,
+      source: "case"
+    }, index)),
+    steps: CASE_STEPS,
+    index: 0,
+    score: 0,
+    answers: [],
+    startedAt: Date.now(),
+    deadline: timedMode ? Date.now() + 5 * 60 * 1000 : null,
+    caseFile
+  };
   startTimer();
   renderQuestion();
 }
@@ -717,7 +793,7 @@ function startWrongReview() {
     answers: [],
     startedAt: Date.now(),
     deadline: null,
-    caseText: "Luyện lại đúng những câu từng trả lời sai."
+    caseFile: { title: "Ôn lại câu sai", claim: "Luyện lại đúng những câu từng trả lời sai.", context: "" }
   };
   currentView = "quiz";
   renderQuestion();
@@ -748,6 +824,7 @@ function formatTime(ms) {
 function renderQuestion() {
   const item = quiz.questions[quiz.index];
   const progress = percent(quiz.index, quiz.questions.length);
+  const step = quiz.steps?.[quiz.index];
 
   app.innerHTML = `
     <div class="play-grid">
@@ -759,7 +836,14 @@ function renderQuestion() {
           <span class="chip">Câu ${quiz.index + 1}/${quiz.questions.length}</span>
           ${quiz.deadline ? `<span class="chip warn" id="timerView">${formatTime(quiz.deadline - Date.now())}</span>` : ""}
         </div>
-        ${quiz.caseText ? `<div class="case-note">${quiz.caseText}</div>` : ""}
+        ${quiz.caseFile ? `
+          <div class="case-note">
+            <strong>${quiz.caseFile.title}</strong>
+            <p>${quiz.caseFile.context}</p>
+            <p><strong>Thông tin cần điều tra:</strong> ${quiz.caseFile.claim}</p>
+            ${step ? `<p><strong>${step.title}</strong></p>` : ""}
+          </div>
+        ` : ""}
         <p class="question-text">${item.question}</p>
         <div class="answers">
           ${item.options.map((option, index) => `
@@ -1092,10 +1176,6 @@ async function renderProfile() {
             <span>Lớp/Nhóm</span>
             <input id="classInput" value="${escapeHtml(profile.className)}" maxlength="36" placeholder="Ví dụ: Nhóm 3 - Triết học">
           </label>
-          <label class="field">
-            <span>Mã lớp/phòng học</span>
-            <input id="profileClassCodeInput" value="${escapeHtml(profile.classCode || "")}" maxlength="20" placeholder="Ví dụ: MLN01">
-          </label>
           <button class="primary-btn" id="saveProfile">Lưu hồ sơ</button>
         </div>
       </section>
@@ -1157,7 +1237,6 @@ async function renderProfile() {
   document.querySelector("#saveProfile").addEventListener("click", async () => {
     profile.name = document.querySelector("#nameInput").value.trim() || "Khách";
     profile.className = document.querySelector("#classInput").value.trim();
-    profile.classCode = document.querySelector("#profileClassCodeInput").value.trim().toUpperCase();
     await saveCloudProfile();
     syncHud();
     renderHome();
