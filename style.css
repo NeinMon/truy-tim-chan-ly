@@ -298,6 +298,10 @@ h3 {
   margin-top: 20px;
 }
 
+.compact-actions {
+  margin-top: 0;
+}
+
 .panel {
   padding: 20px;
 }
@@ -316,6 +320,68 @@ h3 {
   grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
   gap: 18px;
   margin-top: 14px;
+}
+
+.knowledge-map {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 18px;
+}
+
+.knowledge-step {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.knowledge-step span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: white;
+  background: var(--primary);
+  font-weight: 900;
+}
+
+.knowledge-step .meter,
+.knowledge-step small {
+  grid-column: 2;
+}
+
+.summary-sheet,
+.deep-explain,
+.case-note {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.deep-explain {
+  margin-top: 8px;
+}
+
+.deep-explain p,
+.summary-sheet p {
+  margin-bottom: 8px;
+}
+
+.question-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.inline-field {
+  grid-template-columns: 1fr auto;
+  align-items: center;
 }
 
 .admin-grid {
@@ -657,6 +723,10 @@ h3 {
   }
 
   .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .question-editor {
     grid-template-columns: 1fr;
   }
 

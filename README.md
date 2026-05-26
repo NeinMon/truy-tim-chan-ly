@@ -20,6 +20,10 @@ Sản phẩm là một nền tảng mini học tập có thể tái sử dụng,
 - Quên mật khẩu qua Firebase Authentication
 - Phân quyền `player` và `admin`
 - Admin Panel: xem user, cấp/hạ quyền quản lý, xóa điểm leaderboard sai
+- Chế độ ôn câu sai, bản đồ kiến thức, phiếu tổng kết học tập
+- Mã lớp/phòng học để lọc bảng xếp hạng theo lớp
+- Admin thêm câu hỏi vào Firestore
+- Chế độ thi nhanh 5 phút và vụ án nhận thức theo bối cảnh
 - Fallback leaderboard local nếu chưa cấu hình Firebase
 - Achievement sau mỗi lượt chơi
 - Analytics mini theo chủ đề sai/đúng
@@ -81,7 +85,7 @@ service cloud.firestore {
         (
           request.auth.uid == userId &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(["name", "className", "email", "plays", "lastScore", "updatedAt"])
+            .hasOnly(["name", "className", "classCode", "email", "plays", "lastScore", "updatedAt"])
         ) ||
         isAdmin()
       );
@@ -99,12 +103,19 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.name is string &&
         request.resource.data.name.size() <= 28 &&
+        request.resource.data.classCode is string &&
+        request.resource.data.classCode.size() <= 20 &&
         request.resource.data.score is number &&
         request.resource.data.total is number &&
         request.resource.data.percent is number &&
         request.resource.data.elapsed is number;
 
       allow delete: if isAdmin();
+    }
+
+    match /questions/{questionId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
   }
 }

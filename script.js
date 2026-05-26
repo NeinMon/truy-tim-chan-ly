@@ -6,6 +6,9 @@ let authApi = null;
 let currentUser = null;
 let currentView = "home";
 let unsubscribeLeaderboard = null;
+let questionBank = [];
+let timedMode = false;
+let timerId = null;
 const firebaseSettings = window.TRUTH_FIREBASE_SETTINGS || { enabled: false, config: {} };
 
 const QUESTION_BANK = [
@@ -80,12 +83,30 @@ const CATEGORIES = {
   life: "AI/Fake news đời sống"
 };
 
+const CATEGORY_THEORY = {
+  sensory: "Nhận thức cảm tính là giai đoạn đầu, phản ánh sự vật qua cảm giác, tri giác và biểu tượng.",
+  rational: "Nhận thức lý tính dùng khái niệm, phán đoán và suy lý để đi sâu vào bản chất.",
+  practice: "Thực tiễn là cơ sở, động lực, mục đích và tiêu chuẩn kiểm nghiệm chân lý.",
+  truth: "Chân lý là tri thức phù hợp hiện thực khách quan và được thực tiễn kiểm nghiệm; chân lý có tính khách quan, cụ thể.",
+  life: "Các tình huống đời sống giúp vận dụng quy trình: quan sát, phân tích, kiểm chứng, kết luận."
+};
+
+const STUDY_PATH = ["sensory", "rational", "practice", "truth"];
+
 const MODES = [
   { id: "ai", name: "AI nói thật hay sai?", desc: "Tập trung vào cách kiểm tra câu trả lời AI: không tin ngay, tìm nguồn, đối chiếu và kiểm chứng.", pool: ["rational", "practice", "life"] },
   { id: "fake", name: "Săn tin giả", desc: "Luyện quy trình phát hiện fake news: nhận diện dấu hiệu cảm tính, phân tích dữ kiện, kiểm tra thực tế.", pool: ["sensory", "rational", "practice", "life"] },
   { id: "social", name: "Điều tra mạng xã hội", desc: "Xử lý các tình huống viral, lượt share, bình luận số đông và tin đồn trên mạng.", pool: ["sensory", "life", "truth"] },
   { id: "detective", name: "Thám tử chân lý", desc: "Chế độ tổng hợp: đi đủ lộ trình từ nhận thức cảm tính đến lý tính, thực tiễn và chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
+  { id: "case", name: "Vụ án nhận thức", desc: "Mỗi lượt là một hồ sơ điều tra: tin AI, tin y tế, mạng xã hội hoặc review giả.", pool: ["sensory", "rational", "practice", "truth", "life"] },
   { id: "challenge", name: "Thử thách triết học", desc: "Kiểm tra nhanh kiến thức lý thuyết trọng tâm trong cả 5 nhóm câu hỏi.", pool: ["sensory", "rational", "practice", "truth"] }
+];
+
+const CASES = [
+  "Hồ sơ AI: Một câu trả lời nghe rất tự tin nhưng chưa rõ nguồn.",
+  "Hồ sơ y tế: Một mẹo sức khỏe lan truyền nhanh trong nhóm chat.",
+  "Hồ sơ mạng xã hội: Một video viral khiến nhiều người tin ngay.",
+  "Hồ sơ review giả: Một đánh giá cực đoan nhưng thiếu bằng chứng."
 ];
 
 const app = document.querySelector("#app");
@@ -174,6 +195,7 @@ function getDefaultProfile(user = null) {
   return {
     name: user?.displayName || user?.email?.split("@")[0] || "Khách",
     className: "",
+    classCode: "",
     email: user?.email || "",
     role: "player",
     plays: 0,
@@ -215,6 +237,7 @@ async function saveCloudProfile() {
       {
         name: profile.name,
         className: profile.className,
+        classCode: profile.classCode || "",
         email: currentUser.email || profile.email || "",
         plays: profile.plays,
         lastScore: profile.lastScore || 0,
@@ -236,10 +259,66 @@ function canUseCloudLeaderboard() {
   return Boolean(db && firebaseApi && currentUser);
 }
 
+function normalizeQuestion(question, index = 0) {
+  return {
+    id: question.id || `cloud-${Date.now()}-${index}`,
+    category: question.category,
+    question: question.question,
+    options: question.options,
+    answer: Number(question.answer),
+    explanation: question.explanation || "Hãy đối chiếu đáp án với khái niệm lý thuyết liên quan.",
+    source: question.source || "local"
+  };
+}
+
+async function loadCloudQuestions() {
+  questionBank = QUESTION_BANK.map((item) => ({ ...item, source: "local" }));
+
+  if (!db || !firebaseApi) return;
+
+  try {
+    const snapshot = await firebaseApi.getDocs(
+      firebaseApi.query(firebaseApi.collection(db, "questions"), firebaseApi.limit(80))
+    );
+    const cloudQuestions = snapshot.docs
+      .map((doc, index) => normalizeQuestion({ id: doc.id, ...doc.data(), source: "cloud" }, index))
+      .filter((item) => item.category && item.question && Array.isArray(item.options) && item.options.length === 4);
+    questionBank = [...questionBank, ...cloudQuestions];
+  } catch (error) {
+    console.warn("Could not load cloud questions, using local bank.", error);
+  }
+}
+
+async function saveCloudQuestion(question) {
+  if (!db || !firebaseApi || !isAdmin()) return;
+  await firebaseApi.addDoc(firebaseApi.collection(db, "questions"), {
+    ...question,
+    createdBy: currentUser.uid,
+    createdAt: firebaseApi.serverTimestamp()
+  });
+  await loadCloudQuestions();
+}
+
+async function updateCloudQuestion(questionId, question) {
+  if (!db || !firebaseApi || !isAdmin()) return;
+  await firebaseApi.updateDoc(firebaseApi.doc(db, "questions", questionId), {
+    ...question,
+    updatedAt: firebaseApi.serverTimestamp()
+  });
+  await loadCloudQuestions();
+}
+
+async function deleteCloudQuestion(questionId) {
+  if (!db || !firebaseApi || !isAdmin()) return;
+  await firebaseApi.deleteDoc(firebaseApi.doc(db, "questions", questionId));
+  await loadCloudQuestions();
+}
+
 async function saveLeaderboardResult(result) {
   const normalizedResult = {
     name: result.name.slice(0, 28),
     className: (profile.className || "").slice(0, 36),
+    classCode: (profile.classCode || "").toUpperCase().slice(0, 20),
     userId: currentUser?.uid || "local",
     mode: result.mode,
     score: result.score,
@@ -275,6 +354,7 @@ async function saveAttempt(result) {
   const attempt = {
     userId: currentUser?.uid || "local",
     name: result.name.slice(0, 28),
+    classCode: (profile.classCode || "").toUpperCase().slice(0, 20),
     mode: result.mode,
     score: result.score,
     total: result.total,
@@ -327,7 +407,7 @@ async function getAdminData() {
     return { users: [], leaderboardEntries: [] };
   }
 
-  const [usersSnapshot, leaderboardSnapshot] = await Promise.all([
+  const [usersSnapshot, leaderboardSnapshot, questionsSnapshot] = await Promise.all([
     firebaseApi.getDocs(
       firebaseApi.query(firebaseApi.collection(db, "users"), firebaseApi.limit(100))
     ),
@@ -337,12 +417,16 @@ async function getAdminData() {
         firebaseApi.orderBy("percent", "desc"),
         firebaseApi.limit(50)
       )
+    ),
+    firebaseApi.getDocs(
+      firebaseApi.query(firebaseApi.collection(db, "questions"), firebaseApi.limit(50))
     )
   ]);
 
   return {
     users: usersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-    leaderboardEntries: leaderboardSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+    leaderboardEntries: leaderboardSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+    questions: questionsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
   };
 }
 
@@ -373,6 +457,63 @@ function getAggregateStats(attempts) {
   return aggregate;
 }
 
+function getWrongQuestionIds() {
+  return load("truthWrongQuestionIds", []);
+}
+
+function saveWrongQuestionIds(ids) {
+  save("truthWrongQuestionIds", [...new Set(ids)].slice(0, 30));
+}
+
+function getQuestionById(id) {
+  return questionBank.find((item) => String(item.id) === String(id));
+}
+
+function getConceptTips(categoryStats) {
+  const sorted = Object.entries(categoryStats).sort((a, b) => percent(a[1].correct, a[1].total) - percent(b[1].correct, b[1].total));
+  const weakest = sorted[0]?.[0];
+  const strongest = sorted[sorted.length - 1]?.[0];
+  return {
+    strongest: strongest ? CATEGORIES[strongest] : "Chưa đủ dữ liệu",
+    weakest: weakest ? CATEGORIES[weakest] : "Chưa đủ dữ liệu",
+    concepts: [
+      "Nhận thức đi từ cảm tính đến lý tính.",
+      "Thực tiễn là tiêu chuẩn kiểm nghiệm chân lý.",
+      "Chân lý có tính khách quan và tính cụ thể."
+    ],
+    reading: weakest ? `Nên đọc lại phần ${CATEGORIES[weakest]} trong mục 2.3.2.` : "Nên đọc lại giáo trình từ trang 274 đến 283."
+  };
+}
+
+function renderKnowledgeMap(categoryStats) {
+  return `
+    <div class="knowledge-map">
+      ${STUDY_PATH.map((category, index) => {
+        const stat = categoryStats[category] || { total: 0, correct: 0 };
+        const value = percent(stat.correct, stat.total);
+        return `
+          <div class="knowledge-step">
+            <span>${index + 1}</span>
+            <strong>${CATEGORIES[category]}</strong>
+            <div class="meter"><span style="width:${value}%"></span></div>
+            <small>${stat.total ? `${value}% đúng` : "Chưa có dữ liệu"}</small>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderDeepExplanation(item, selectedIndex) {
+  return `
+    <div class="deep-explain">
+      <p><strong>Vì sao đáp án đúng?</strong> ${item.explanation}</p>
+      <p><strong>Vì sao các đáp án còn lại chưa đúng?</strong> Các lựa chọn khác hoặc dừng ở cảm giác/số đông, hoặc chưa có kiểm chứng, hoặc không đúng khái niệm của chủ đề ${CATEGORIES[item.category]}.</p>
+      <p><strong>Liên hệ lý thuyết:</strong> ${CATEGORY_THEORY[item.category]}</p>
+    </div>
+  `;
+}
+
 async function getLeaderboardEntries() {
   if (db) {
     try {
@@ -385,6 +526,7 @@ async function getLeaderboardEntries() {
       );
       return snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((item) => !profile.classCode || item.classCode === profile.classCode)
         .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
         .slice(0, 10);
     } catch (error) {
@@ -484,6 +626,7 @@ function renderHome() {
         </div>
         <div class="hero-actions">
           <button class="primary-btn" id="quickStart">Bắt đầu chơi</button>
+          <button class="secondary-btn" id="reviewWrongBtn">Ôn câu sai</button>
           <button class="secondary-btn" data-jump="profile">Cập nhật hồ sơ</button>
         </div>
       </section>
@@ -501,6 +644,14 @@ function renderHome() {
             ${Object.entries(CATEGORIES).map(([id, name]) => `<option value="${id}" ${selectedCategory === id ? "selected" : ""}>${name}</option>`).join("")}
           </select>
         </label>
+        <label class="field">
+          <span>Mã lớp/phòng học</span>
+          <input id="classCodeInput" value="${escapeHtml(profile.classCode || "")}" maxlength="20" placeholder="Ví dụ: MLN01">
+        </label>
+        <label class="field inline-field">
+          <span>Thi nhanh 5 phút</span>
+          <input id="timedModeInput" type="checkbox" ${timedMode ? "checked" : ""}>
+        </label>
       </aside>
     </div>
   `;
@@ -514,17 +665,26 @@ function renderHome() {
   document.querySelector("#categorySelect").addEventListener("change", (event) => {
     selectedCategory = event.target.value;
   });
+  document.querySelector("#classCodeInput").addEventListener("change", async (event) => {
+    profile.classCode = event.target.value.trim().toUpperCase();
+    await saveCloudProfile();
+    syncHud();
+  });
+  document.querySelector("#timedModeInput").addEventListener("change", (event) => {
+    timedMode = event.target.checked;
+  });
   document.querySelector("#quickStart").addEventListener("click", startQuiz);
+  document.querySelector("#reviewWrongBtn").addEventListener("click", startWrongReview);
   document.querySelector("[data-jump='profile']").addEventListener("click", renderProfile);
 }
 
 function startQuiz() {
   currentView = "quiz";
   const mode = MODES.find((item) => item.id === selectedMode);
-  let pool = QUESTION_BANK.filter((question) => mode.pool.includes(question.category));
+  let pool = questionBank.filter((question) => mode.pool.includes(question.category));
 
   if (selectedCategory !== "all") {
-    pool = QUESTION_BANK.filter((question) => question.category === selectedCategory);
+    pool = questionBank.filter((question) => question.category === selectedCategory);
   }
 
   quiz = {
@@ -533,10 +693,56 @@ function startQuiz() {
     index: 0,
     score: 0,
     answers: [],
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    deadline: timedMode ? Date.now() + 5 * 60 * 1000 : null,
+    caseText: mode.id === "case" ? CASES[Math.floor(Math.random() * CASES.length)] : ""
   };
 
+  startTimer();
   renderQuestion();
+}
+
+function startWrongReview() {
+  const wrongQuestions = getWrongQuestionIds().map(getQuestionById).filter(Boolean);
+  if (!wrongQuestions.length) {
+    alert("Chưa có câu sai để ôn. Hãy chơi một lượt trước.");
+    return;
+  }
+
+  quiz = {
+    mode: { id: "review", name: "Ôn lại câu sai", pool: [] },
+    questions: shuffle(wrongQuestions).slice(0, 10),
+    index: 0,
+    score: 0,
+    answers: [],
+    startedAt: Date.now(),
+    deadline: null,
+    caseText: "Luyện lại đúng những câu từng trả lời sai."
+  };
+  currentView = "quiz";
+  renderQuestion();
+}
+
+function startTimer() {
+  if (timerId) clearInterval(timerId);
+  if (!quiz?.deadline) return;
+  timerId = setInterval(() => {
+    const left = quiz.deadline - Date.now();
+    const timer = document.querySelector("#timerView");
+    if (timer) timer.textContent = formatTime(left);
+    if (left <= 0) {
+      clearInterval(timerId);
+      timerId = null;
+      finishQuiz();
+    }
+  }, 1000);
+}
+
+function formatTime(ms) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  const minute = Math.floor(seconds / 60);
+  const second = String(seconds % 60).padStart(2, "0");
+  return `${minute}:${second}`;
 }
 
 function renderQuestion() {
@@ -551,7 +757,9 @@ function renderQuestion() {
           <span class="chip">${quiz.mode.name}</span>
           <span class="chip">${CATEGORIES[item.category]}</span>
           <span class="chip">Câu ${quiz.index + 1}/${quiz.questions.length}</span>
+          ${quiz.deadline ? `<span class="chip warn" id="timerView">${formatTime(quiz.deadline - Date.now())}</span>` : ""}
         </div>
+        ${quiz.caseText ? `<div class="case-note">${quiz.caseText}</div>` : ""}
         <p class="question-text">${item.question}</p>
         <div class="answers">
           ${item.options.map((option, index) => `
@@ -587,7 +795,10 @@ function renderQuestion() {
     quiz.index += 1;
     renderQuestion();
   });
-  document.querySelector("#quitQuiz").addEventListener("click", renderHome);
+  document.querySelector("#quitQuiz").addEventListener("click", () => {
+    if (timerId) clearInterval(timerId);
+    renderHome();
+  });
 }
 
 function chooseAnswer(answerIndex) {
@@ -596,7 +807,7 @@ function chooseAnswer(answerIndex) {
   const feedback = document.querySelector("#feedback");
 
   if (isCorrect) quiz.score += 1;
-  quiz.answers.push({ category: item.category, correct: isCorrect, selected: answerIndex });
+  quiz.answers.push({ id: item.id, category: item.category, correct: isCorrect, selected: answerIndex });
 
   document.querySelectorAll("[data-answer]").forEach((button) => {
     const index = Number(button.dataset.answer);
@@ -606,11 +817,15 @@ function chooseAnswer(answerIndex) {
   });
 
   feedback.className = `feedback show ${isCorrect ? "good" : "bad"}`;
-  feedback.innerHTML = `<strong>${isCorrect ? "Đúng rồi." : "Chưa chính xác."}</strong> ${item.explanation}`;
+  feedback.innerHTML = `<strong>${isCorrect ? "Đúng rồi." : "Chưa chính xác."}</strong> ${renderDeepExplanation(item, answerIndex)}`;
   document.querySelector("#nextQuestion").disabled = false;
 }
 
 async function finishQuiz() {
+  if (timerId) {
+    clearInterval(timerId);
+    timerId = null;
+  }
   const elapsed = Math.max(1, Math.round((Date.now() - quiz.startedAt) / 1000));
   const scorePercent = percent(quiz.score, quiz.questions.length);
   const result = {
@@ -630,6 +845,7 @@ async function finishQuiz() {
 
   await saveLeaderboardResult(result);
   await saveAttempt(result);
+  saveWrongQuestionIds(quiz.answers.filter((answer) => !answer.correct).map((answer) => answer.id));
   syncHud();
   renderResult(result);
 }
@@ -661,39 +877,53 @@ function renderResult(result) {
   currentView = "result";
   const achievements = getAchievements(result);
   const categoryStats = getCategoryStats(quiz.answers);
-  const shareText = `Tôi đạt rank "${result.rank}" với ${result.score}/${result.total} điểm trên TRUY TÌM CHÂN LÝ.`;
+  const tips = getConceptTips(categoryStats);
+  const wrongCount = quiz.answers.filter((answer) => !answer.correct).length;
+  const summaryText = `T?i ??t ${result.score}/${result.total} (${result.percent}%). M?nh ?: ${tips.strongest}. C?n ?n: ${tips.weakest}. ${tips.reading}`;
+  const shareText = `${summaryText} - TRUY T?M CH?N L?.`;
 
   app.innerHTML = `
     <div class="result-grid">
       <section class="panel">
-        <p class="eyebrow">Kết quả điều tra</p>
+        <p class="eyebrow">K?t qu? h?c t?p</p>
         <h2 class="result-title">${result.rank}</h2>
         <div class="stats-grid">
-          <div class="stat-card"><span>Điểm</span><strong>${result.score}/${result.total}</strong></div>
-          <div class="stat-card"><span>Tỷ lệ đúng</span><strong>${result.percent}%</strong></div>
-          <div class="stat-card"><span>Thời gian</span><strong>${result.elapsed}s</strong></div>
-          <div class="stat-card"><span>Nhận xét</span><strong>${result.percent >= 70 ? "Ổn" : "Cần ôn"}</strong></div>
+          <div class="stat-card"><span>?i?m</span><strong>${result.score}/${result.total}</strong></div>
+          <div class="stat-card"><span>T? l? ??ng</span><strong>${result.percent}%</strong></div>
+          <div class="stat-card"><span>Th?i gian</span><strong>${result.elapsed}s</strong></div>
+          <div class="stat-card"><span>Nh?n x?t</span><strong>${result.percent >= 70 ? "?n" : "C?n ?n"}</strong></div>
         </div>
 
-        <h3 style="margin-top: 22px;">Achievement</h3>
+        <h3 style="margin-top: 22px;">Huy hi?u h?c t?p</h3>
         <div class="achievement-grid">
           ${achievements.map((item) => `
             <div class="achievement-card ${item.unlocked ? "" : "locked"}">
-              <strong>${item.unlocked ? "✅" : "🔒"} ${item.name}</strong>
+              <strong>${item.unlocked ? "??t" : "Ch?a ??t"} ? ${item.name}</strong>
               <span class="muted">${item.desc}</span>
             </div>
           `).join("")}
         </div>
 
+        <h3 style="margin-top: 22px;">Phi?u t?ng k?t h?c t?p</h3>
+        <div class="summary-sheet">
+          <p><strong>B?n m?nh ?:</strong> ${tips.strongest}</p>
+          <p><strong>C?n ?n:</strong> ${tips.weakest}</p>
+          <p><strong>3 kh?i ni?m c?n nh?:</strong> ${tips.concepts.join(" ? ")}</p>
+          <p><strong>G?i ? ??c l?i:</strong> ${tips.reading}</p>
+        </div>
+
         <div class="result-actions">
-          <button class="primary-btn" id="playAgain">Chơi lại random</button>
-          <button class="secondary-btn" id="shareResult">Share kết quả</button>
-          <button class="secondary-btn" id="copyResult">Copy kết quả</button>
+          <button class="primary-btn" id="playAgain">Ch?i l?i random</button>
+          <button class="secondary-btn" id="reviewWrongResult" ${wrongCount ? "" : "disabled"}>?n l?i c?u sai</button>
+          <button class="secondary-btn" id="shareResult">Share k?t qu?</button>
+          <button class="secondary-btn" id="copyResult">Copy phi?u t?ng k?t</button>
         </div>
       </section>
 
       <aside class="panel">
-        <h2>Analytics mini</h2>
+        <h2>Ph?n t?ch h?c t?p</h2>
+        <h3>B?n ?? ki?n th?c</h3>
+        ${renderKnowledgeMap(categoryStats)}
         <div class="category-meter">
           ${Object.entries(categoryStats).map(([category, stat]) => {
             const value = percent(stat.correct, stat.total);
@@ -706,16 +936,17 @@ function renderResult(result) {
             `;
           }).join("")}
         </div>
-        <p class="muted" style="margin-top: 18px;">Phần nào tỷ lệ thấp là phần nên ôn lại: cảm tính, lý tính, thực tiễn hay chân lý.</p>
+        <p class="muted" style="margin-top: 18px;">Ph?n n?o t? l? th?p l? ph?n n?n ?n l?i: c?m t?nh, l? t?nh, th?c ti?n hay ch?n l?.</p>
       </aside>
     </div>
   `;
 
   document.querySelector("#playAgain").addEventListener("click", startQuiz);
-  document.querySelector("#copyResult").addEventListener("click", () => copyShareText(shareText));
+  document.querySelector("#reviewWrongResult").addEventListener("click", startWrongReview);
+  document.querySelector("#copyResult").addEventListener("click", () => copyShareText(summaryText));
   document.querySelector("#shareResult").addEventListener("click", async () => {
     if (navigator.share) {
-      await navigator.share({ title: "TRUY TÌM CHÂN LÝ", text: shareText, url: location.href });
+      await navigator.share({ title: "TRUY T?M CH?N L?", text: shareText, url: location.href });
     } else {
       copyShareText(shareText);
     }
@@ -861,6 +1092,10 @@ async function renderProfile() {
             <span>Lớp/Nhóm</span>
             <input id="classInput" value="${escapeHtml(profile.className)}" maxlength="36" placeholder="Ví dụ: Nhóm 3 - Triết học">
           </label>
+          <label class="field">
+            <span>Mã lớp/phòng học</span>
+            <input id="profileClassCodeInput" value="${escapeHtml(profile.classCode || "")}" maxlength="20" placeholder="Ví dụ: MLN01">
+          </label>
           <button class="primary-btn" id="saveProfile">Lưu hồ sơ</button>
         </div>
       </section>
@@ -922,6 +1157,7 @@ async function renderProfile() {
   document.querySelector("#saveProfile").addEventListener("click", async () => {
     profile.name = document.querySelector("#nameInput").value.trim() || "Khách";
     profile.className = document.querySelector("#classInput").value.trim();
+    profile.classCode = document.querySelector("#profileClassCodeInput").value.trim().toUpperCase();
     await saveCloudProfile();
     syncHud();
     renderHome();
@@ -1046,7 +1282,7 @@ async function renderAdmin() {
   `;
 
   try {
-    const { users, leaderboardEntries } = await getAdminData();
+    const { users, leaderboardEntries, questions } = await getAdminData();
     const playerCount = users.filter((user) => user.role !== "admin").length;
     const adminCount = users.filter((user) => user.role === "admin").length;
 
@@ -1060,6 +1296,7 @@ async function renderAdmin() {
             <div class="stat-card"><span>Người chơi</span><strong>${playerCount}</strong></div>
             <div class="stat-card"><span>Quản lý</span><strong>${adminCount}</strong></div>
             <div class="stat-card"><span>Điểm đã ghi</span><strong>${leaderboardEntries.length}</strong></div>
+            <div class="stat-card"><span>Câu hỏi thêm</span><strong>${questions.length}</strong></div>
           </div>
           <div class="admin-note">
             <strong>Người chơi không được can thiệp:</strong>
@@ -1083,6 +1320,39 @@ async function renderAdmin() {
                 }
               </li>
             `).join("") : `<li><span></span><span>Chưa có user.</span><span></span></li>`}
+          </ul>
+        </section>
+
+        <section class="panel admin-wide">
+          <h2>Thêm câu hỏi</h2>
+          <div class="question-editor">
+            <input id="adminQuestionId" type="hidden">
+            <label class="field"><span>Chủ đề</span><select id="adminQuestionCategory">${Object.entries(CATEGORIES).map(([id, name]) => `<option value="${id}">${name}</option>`).join("")}</select></label>
+            <label class="field"><span>Câu hỏi</span><input id="adminQuestionText" placeholder="Nhập câu hỏi"></label>
+            <label class="field"><span>A</span><input id="adminOption0"></label>
+            <label class="field"><span>B</span><input id="adminOption1"></label>
+            <label class="field"><span>C</span><input id="adminOption2"></label>
+            <label class="field"><span>D</span><input id="adminOption3"></label>
+            <label class="field"><span>Đáp án đúng</span><select id="adminAnswer"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select></label>
+            <label class="field"><span>Giải thích</span><input id="adminExplanation" placeholder="Giải thích ngắn"></label>
+            <button class="primary-btn" id="saveQuestionBtn">Lưu câu hỏi</button>
+            <button class="secondary-btn" id="resetQuestionFormBtn">Nhập câu mới</button>
+          </div>
+          <p class="muted" style="margin-top: 12px;">Câu hỏi admin thêm sẽ lưu trên Firestore và được trộn vào ngân hàng câu hỏi khi người học chơi.</p>
+          <ul class="mini-list" style="margin-top: 18px;">
+            ${questions.length ? questions.map((question) => `
+              <li class="leader-row">
+                <strong>${CATEGORIES[question.category] || "Khác"}</strong>
+                <span>
+                  <strong>${escapeHtml(question.question || "")}</strong><br>
+                  <span class="muted">${(question.options || []).map(escapeHtml).join(" · ")}</span>
+                </span>
+                <span class="row-actions compact-actions">
+                  <button class="secondary-btn edit-question" data-question="${question.id}">Sửa</button>
+                  <button class="secondary-btn danger-btn delete-question" data-question="${question.id}">Xóa</button>
+                </span>
+              </li>
+            `).join("") : `<li><span></span><span>Chưa có câu hỏi thêm từ admin.</span><span></span></li>`}
           </ul>
         </section>
 
@@ -1111,6 +1381,57 @@ async function renderAdmin() {
       });
     });
 
+    document.querySelector("#saveQuestionBtn").addEventListener("click", async () => {
+      const options = [0, 1, 2, 3].map((index) => document.querySelector(`#adminOption${index}`).value.trim());
+      const question = {
+        category: document.querySelector("#adminQuestionCategory").value,
+        question: document.querySelector("#adminQuestionText").value.trim(),
+        options,
+        answer: Number(document.querySelector("#adminAnswer").value),
+        explanation: document.querySelector("#adminExplanation").value.trim()
+      };
+      if (!question.question || options.some((option) => !option) || !question.explanation) {
+        alert("Vui lòng nhập đủ câu hỏi, 4 đáp án và giải thích.");
+        return;
+      }
+      const questionId = document.querySelector("#adminQuestionId").value;
+      if (questionId) {
+        await updateCloudQuestion(questionId, question);
+      } else {
+        await saveCloudQuestion(question);
+      }
+      alert("Đã lưu câu hỏi.");
+      renderAdmin();
+    });
+
+    document.querySelector("#resetQuestionFormBtn").addEventListener("click", () => {
+      document.querySelector("#adminQuestionId").value = "";
+      document.querySelector("#adminQuestionText").value = "";
+      [0, 1, 2, 3].forEach((index) => document.querySelector(`#adminOption${index}`).value = "");
+      document.querySelector("#adminExplanation").value = "";
+    });
+
+    document.querySelectorAll(".edit-question").forEach((button) => {
+      button.addEventListener("click", () => {
+        const item = questions.find((question) => question.id === button.dataset.question);
+        if (!item) return;
+        document.querySelector("#adminQuestionId").value = item.id;
+        document.querySelector("#adminQuestionCategory").value = item.category;
+        document.querySelector("#adminQuestionText").value = item.question || "";
+        [0, 1, 2, 3].forEach((index) => document.querySelector(`#adminOption${index}`).value = item.options?.[index] || "");
+        document.querySelector("#adminAnswer").value = String(item.answer || 0);
+        document.querySelector("#adminExplanation").value = item.explanation || "";
+        document.querySelector("#adminQuestionText").focus();
+      });
+    });
+
+    document.querySelectorAll(".delete-question").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await deleteCloudQuestion(button.dataset.question);
+        renderAdmin();
+      });
+    });
+
     document.querySelectorAll(".delete-score").forEach((button) => {
       button.addEventListener("click", async () => {
         await deleteLeaderboardEntry(button.dataset.entry);
@@ -1129,6 +1450,7 @@ async function renderAdmin() {
 
 async function boot() {
   await initFirebase();
+  await loadCloudQuestions();
   syncHud();
   renderHome();
 }
