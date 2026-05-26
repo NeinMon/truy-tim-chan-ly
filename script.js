@@ -787,10 +787,16 @@ async function handleAuth(action) {
       "auth/invalid-email": "Email không hợp lệ.",
       "auth/weak-password": "Mật khẩu nên có ít nhất 6 ký tự.",
       "auth/invalid-credential": "Email hoặc mật khẩu chưa đúng.",
-    "auth/user-not-found": "Chưa có tài khoản với email này.",
-    "auth/wrong-password": "Mật khẩu chưa đúng."
+      "auth/user-not-found": "Chưa có tài khoản với email này.",
+      "auth/wrong-password": "Mật khẩu chưa đúng.",
+      "auth/operation-not-allowed": "Firebase Authentication chưa bật Email/Password.",
+      "auth/configuration-not-found": "Firebase Authentication chưa được khởi tạo đúng cho project này.",
+      "auth/network-request-failed": "Không kết nối được Firebase. Kiểm tra mạng hoặc chặn trình duyệt.",
+      "auth/too-many-requests": "Firebase đang tạm chặn do thử quá nhiều lần. Đợi một lát rồi thử lại."
     };
-    if (message) message.textContent = friendly[error.code] || "Không đăng nhập được. Kiểm tra Firebase Authentication đã bật Email/Password chưa.";
+    if (message) {
+      message.textContent = friendly[error.code] || `Không xử lý được tài khoản. Mã lỗi: ${error.code || "unknown"}`;
+    }
   }
 }
 
