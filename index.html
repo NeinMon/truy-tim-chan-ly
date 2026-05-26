@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Truy Tìm Chân Lý | Interactive Philosophy Quiz Platform</title>
+  <meta name="description" content="Nền tảng quiz triết học tương tác về nhận thức cảm tính, nhận thức lý tính, thực tiễn và chân lý.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <nav class="topbar" aria-label="Điều hướng chính">
+      <button class="brand-btn" data-view="home" aria-label="Về trang chủ">
+        <span class="brand-mark">🔍</span>
+        <span>
+          <strong>TRUY TÌM CHÂN LÝ</strong>
+          <small>Interactive Philosophy Quiz Platform</small>
+        </span>
+      </button>
+
+      <div class="nav-actions">
+        <button class="icon-btn" id="themeToggle" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">☾</button>
+        <button class="nav-btn" data-view="profile">Hồ sơ</button>
+        <button class="nav-btn" data-view="leaderboard">Leaderboard</button>
+      </div>
+    </nav>
+
+    <section class="status-strip" aria-label="Trạng thái người chơi">
+      <div>
+        <span>Người chơi</span>
+        <strong id="playerNameView">Khách</strong>
+      </div>
+      <div>
+        <span>Cấp độ</span>
+        <strong id="levelView">LV1</strong>
+      </div>
+      <div>
+        <span>XP</span>
+        <strong id="xpView">0</strong>
+      </div>
+      <div>
+        <span>Best</span>
+        <strong id="bestView">0%</strong>
+      </div>
+    </section>
+
+    <section id="app" class="view-panel" aria-live="polite"></section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
