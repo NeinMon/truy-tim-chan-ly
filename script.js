@@ -94,12 +94,9 @@ const CATEGORY_THEORY = {
 const STUDY_PATH = ["sensory", "rational", "practice", "truth"];
 
 const MODES = [
-  { id: "ai", name: "AI nói thật hay sai?", desc: "Tập trung vào cách kiểm tra câu trả lời AI: không tin ngay, tìm nguồn, đối chiếu và kiểm chứng.", pool: ["rational", "practice", "life"] },
-  { id: "fake", name: "Săn tin giả", desc: "Luyện quy trình phát hiện fake news: nhận diện dấu hiệu cảm tính, phân tích dữ kiện, kiểm tra thực tế.", pool: ["sensory", "rational", "practice", "life"] },
-  { id: "social", name: "Điều tra mạng xã hội", desc: "Xử lý các tình huống viral, lượt share, bình luận số đông và tin đồn trên mạng.", pool: ["sensory", "life", "truth"] },
-  { id: "detective", name: "Thám tử chân lý", desc: "Chế độ tổng hợp: đi đủ lộ trình từ nhận thức cảm tính đến lý tính, thực tiễn và chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
+  { id: "practice", name: "Luyện tập tổng hợp", desc: "Làm 10 câu ngẫu nhiên để ôn toàn bộ quá trình nhận thức và chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
   { id: "case", name: "Vụ án nhận thức", desc: "Đi theo 5 bước điều tra: quan sát, thu thập dữ kiện, phân tích, kiểm nghiệm và kết luận.", pool: ["sensory", "rational", "practice", "truth", "life"] },
-  { id: "challenge", name: "Thử thách triết học", desc: "Kiểm tra nhanh kiến thức lý thuyết trọng tâm trong cả 5 nhóm câu hỏi.", pool: ["sensory", "rational", "practice", "truth"] }
+  { id: "test", name: "Kiểm tra 5 phút", desc: "Làm bài có đồng hồ đếm ngược, phù hợp dùng nhanh trong giờ thuyết trình.", pool: ["sensory", "rational", "practice", "truth", "life"], timed: true }
 ];
 
 const CASES = [
@@ -178,7 +175,7 @@ const adminNav = document.querySelector("#adminNav");
 
 let profile = load("truthProfile", { name: "Khách", className: "", role: "player", plays: 0, lastScore: 0 });
 let leaderboard = load("truthLeaderboard", []);
-let selectedMode = MODES[3].id;
+let selectedMode = MODES[0].id;
 let selectedCategory = "all";
 let quiz = null;
 
@@ -622,7 +619,7 @@ function getRank(scorePercent) {
 
 function syncHud() {
   playerNameView.textContent = profile.name || "Khách";
-  roleView.textContent = isAdmin() ? "Quản lý" : "Người chơi";
+  roleView.textContent = isAdmin() ? "Quản lý" : "Người học";
   playsView.textContent = profile.plays || 0;
   lastScoreView.textContent = `${profile.lastScore || 0}%`;
   if (adminNav) adminNav.hidden = !isAdmin();
@@ -668,26 +665,26 @@ function renderHome() {
   app.innerHTML = `
     <div class="hero-grid">
       <section class="hero-copy">
-      <p class="eyebrow">Nền tảng quiz triết học tương tác</p>
+      <p class="eyebrow">Nền tảng câu hỏi triết học tương tác</p>
       <h1>TRUY TÌM CHÂN LÝ</h1>
-        <p class="lead">Chọn một kiểu tình huống, trả lời 10 câu ngẫu nhiên từ ngân hàng 50 câu, mở khóa huy hiệu, leo bảng xếp hạng và chia sẻ kết quả cho bạn bè.</p>
+        <p class="lead">Chọn một hình thức luyện tập, trả lời câu hỏi, xem giải thích và nhận phiếu tổng kết để biết phần cần ôn.</p>
         <div class="chip-row">
           <span class="chip good">50 câu hỏi</span>
           <span class="chip">5 chủ đề</span>
-          <span class="chip">Random mỗi lượt</span>
+          <span class="chip">Câu hỏi ngẫu nhiên</span>
           <span class="chip warn">${getLeaderboardLabel()}</span>
           <span class="chip ${currentUser ? "good" : "warn"}">${currentUser ? "Đã đăng nhập" : "Đăng nhập để lưu điểm"}</span>
         </div>
         <div class="hero-actions">
-          <button class="primary-btn" id="quickStart">Bắt đầu chơi</button>
+          <button class="primary-btn" id="quickStart">Bắt đầu làm câu hỏi</button>
           <button class="secondary-btn" id="reviewWrongBtn">Ôn câu sai</button>
           <button class="secondary-btn" data-jump="profile">Cập nhật hồ sơ</button>
         </div>
       </section>
 
       <aside class="panel">
-        <h2>Chọn chế độ</h2>
-        <p class="muted">Mỗi chế độ chỉ khác cách trộn câu hỏi và bối cảnh luyện tập. Bạn có thể chọn theo phần muốn ôn.</p>
+        <h2>Chọn hình thức học</h2>
+        <p class="muted">Mỗi hình thức có mục đích riêng: luyện tổng hợp, điều tra theo câu chuyện, hoặc kiểm tra nhanh trong 5 phút.</p>
         <div class="mode-grid">${modeCards}</div>
 
         <h3 style="margin-top: 20px;">Bộ câu hỏi</h3>
@@ -699,7 +696,7 @@ function renderHome() {
           </select>
         </label>
         <label class="field inline-field">
-          <span>Thi nhanh 5 phút</span>
+          <span>Đồng hồ 5 phút</span>
           <input id="timedModeInput" type="checkbox" ${timedMode ? "checked" : ""}>
         </label>
       </aside>
@@ -745,7 +742,7 @@ function startQuiz() {
     score: 0,
     answers: [],
     startedAt: Date.now(),
-    deadline: timedMode ? Date.now() + 5 * 60 * 1000 : null,
+    deadline: (timedMode || mode.timed) ? Date.now() + 5 * 60 * 1000 : null,
     caseFile: null
   };
 
@@ -771,7 +768,7 @@ function startCaseInvestigation(mode) {
     score: 0,
     answers: [],
     startedAt: Date.now(),
-    deadline: timedMode ? Date.now() + 5 * 60 * 1000 : null,
+    deadline: (timedMode || mode.timed) ? Date.now() + 5 * 60 * 1000 : null,
     caseFile
   };
   startTimer();
@@ -781,7 +778,7 @@ function startCaseInvestigation(mode) {
 function startWrongReview() {
   const wrongQuestions = getWrongQuestionIds().map(getQuestionById).filter(Boolean);
   if (!wrongQuestions.length) {
-    alert("Chưa có câu sai để ôn. Hãy chơi một lượt trước.");
+    alert("Chưa có câu sai để ôn. Hãy làm một lượt câu hỏi trước.");
     return;
   }
 
@@ -855,18 +852,18 @@ function renderQuestion() {
         </div>
         <div id="feedback" class="feedback"></div>
         <div class="row-actions">
-          <button class="primary-btn" id="nextQuestion" disabled>${quiz.index === quiz.questions.length - 1 ? "Xem kết quả" : "Câu tiếp theo"}</button>
-          <button class="secondary-btn" id="quitQuiz">Thoát</button>
+          <button class="primary-btn" id="nextQuestion" disabled>${quiz.index === quiz.questions.length - 1 ? "Xem kết quả học tập" : "Câu tiếp theo"}</button>
+          <button class="secondary-btn" id="quitQuiz">Dừng bài</button>
         </div>
       </section>
 
       <aside class="side-panel">
-        <h2>Điều tra đang mở</h2>
+        <h2>Tiến trình làm bài</h2>
         <div class="stats-grid">
           <div class="stat-card"><span>Điểm</span><strong>${quiz.score}/${quiz.questions.length}</strong></div>
           <div class="stat-card"><span>Đúng</span><strong>${percent(quiz.score, Math.max(quiz.index, 1))}%</strong></div>
         </div>
-        <p class="muted" style="margin-top: 16px;">Mỗi lượt chơi lấy ngẫu nhiên 10 câu, nên bạn có thể chơi lại nhiều lần để luyện đủ 5 nhóm kiến thức.</p>
+        <p class="muted" style="margin-top: 16px;">Mỗi lượt lấy một bộ câu hỏi ngẫu nhiên để bạn luyện đủ 5 nhóm kiến thức.</p>
       </aside>
     </div>
   `;
@@ -963,50 +960,50 @@ function renderResult(result) {
   const categoryStats = getCategoryStats(quiz.answers);
   const tips = getConceptTips(categoryStats);
   const wrongCount = quiz.answers.filter((answer) => !answer.correct).length;
-  const summaryText = `T?i ??t ${result.score}/${result.total} (${result.percent}%). M?nh ?: ${tips.strongest}. C?n ?n: ${tips.weakest}. ${tips.reading}`;
-  const shareText = `${summaryText} - TRUY T?M CH?N L?.`;
+  const summaryText = `Tôi đạt ${result.score}/${result.total} (${result.percent}%). Mạnh ở: ${tips.strongest}. Cần ôn: ${tips.weakest}. ${tips.reading}`;
+  const shareText = `${summaryText} - TRUY TÌM CHÂN LÝ.`;
 
   app.innerHTML = `
     <div class="result-grid">
       <section class="panel">
-        <p class="eyebrow">K?t qu? h?c t?p</p>
+        <p class="eyebrow">Kết quả học tập</p>
         <h2 class="result-title">${result.rank}</h2>
         <div class="stats-grid">
-          <div class="stat-card"><span>?i?m</span><strong>${result.score}/${result.total}</strong></div>
-          <div class="stat-card"><span>T? l? ??ng</span><strong>${result.percent}%</strong></div>
-          <div class="stat-card"><span>Th?i gian</span><strong>${result.elapsed}s</strong></div>
-          <div class="stat-card"><span>Nh?n x?t</span><strong>${result.percent >= 70 ? "?n" : "C?n ?n"}</strong></div>
+          <div class="stat-card"><span>Điểm</span><strong>${result.score}/${result.total}</strong></div>
+          <div class="stat-card"><span>Tỷ lệ đúng</span><strong>${result.percent}%</strong></div>
+          <div class="stat-card"><span>Thời gian</span><strong>${result.elapsed}s</strong></div>
+          <div class="stat-card"><span>Nhận xét</span><strong>${result.percent >= 70 ? "Ổn" : "Cần ôn"}</strong></div>
         </div>
 
-        <h3 style="margin-top: 22px;">Huy hi?u h?c t?p</h3>
+        <h3 style="margin-top: 22px;">Huy hiệu học tập</h3>
         <div class="achievement-grid">
           ${achievements.map((item) => `
             <div class="achievement-card ${item.unlocked ? "" : "locked"}">
-              <strong>${item.unlocked ? "??t" : "Ch?a ??t"} ? ${item.name}</strong>
+              <strong>${item.unlocked ? "Đạt" : "Chưa đạt"} - ${item.name}</strong>
               <span class="muted">${item.desc}</span>
             </div>
           `).join("")}
         </div>
 
-        <h3 style="margin-top: 22px;">Phi?u t?ng k?t h?c t?p</h3>
+        <h3 style="margin-top: 22px;">Phiếu tổng kết học tập</h3>
         <div class="summary-sheet">
-          <p><strong>B?n m?nh ?:</strong> ${tips.strongest}</p>
-          <p><strong>C?n ?n:</strong> ${tips.weakest}</p>
-          <p><strong>3 kh?i ni?m c?n nh?:</strong> ${tips.concepts.join(" ? ")}</p>
-          <p><strong>G?i ? ??c l?i:</strong> ${tips.reading}</p>
+          <p><strong>Bạn mạnh ở:</strong> ${tips.strongest}</p>
+          <p><strong>Cần ôn:</strong> ${tips.weakest}</p>
+          <p><strong>3 khái niệm cần nhớ:</strong> ${tips.concepts.join(" - ")}</p>
+          <p><strong>Gợi ý đọc lại:</strong> ${tips.reading}</p>
         </div>
 
         <div class="result-actions">
-          <button class="primary-btn" id="playAgain">Ch?i l?i random</button>
-          <button class="secondary-btn" id="reviewWrongResult" ${wrongCount ? "" : "disabled"}>?n l?i c?u sai</button>
-          <button class="secondary-btn" id="shareResult">Share k?t qu?</button>
-          <button class="secondary-btn" id="copyResult">Copy phi?u t?ng k?t</button>
+          <button class="primary-btn" id="playAgain">Làm bộ câu hỏi khác</button>
+          <button class="secondary-btn" id="reviewWrongResult" ${wrongCount ? "" : "disabled"}>Ôn lại câu sai</button>
+          <button class="secondary-btn" id="shareResult">Chia sẻ kết quả</button>
+          <button class="secondary-btn" id="copyResult">Sao chép phiếu tổng kết</button>
         </div>
       </section>
 
       <aside class="panel">
-        <h2>Ph?n t?ch h?c t?p</h2>
-        <h3>B?n ?? ki?n th?c</h3>
+        <h2>Phân tích học tập</h2>
+        <h3>Bản đồ kiến thức</h3>
         ${renderKnowledgeMap(categoryStats)}
         <div class="category-meter">
           ${Object.entries(categoryStats).map(([category, stat]) => {
@@ -1020,7 +1017,7 @@ function renderResult(result) {
             `;
           }).join("")}
         </div>
-        <p class="muted" style="margin-top: 18px;">Ph?n n?o t? l? th?p l? ph?n n?n ?n l?i: c?m t?nh, l? t?nh, th?c ti?n hay ch?n l?.</p>
+        <p class="muted" style="margin-top: 18px;">Phần nào tỷ lệ thấp là phần nên ôn lại: cảm tính, lý tính, thực tiễn hay chân lý.</p>
       </aside>
     </div>
   `;
@@ -1030,7 +1027,7 @@ function renderResult(result) {
   document.querySelector("#copyResult").addEventListener("click", () => copyShareText(summaryText));
   document.querySelector("#shareResult").addEventListener("click", async () => {
     if (navigator.share) {
-      await navigator.share({ title: "TRUY T?M CH?N L?", text: shareText, url: location.href });
+      await navigator.share({ title: "TRUY TÌM CHÂN LÝ", text: shareText, url: location.href });
     } else {
       copyShareText(shareText);
     }
@@ -1166,7 +1163,7 @@ async function renderProfile() {
   app.innerHTML = `
     <div class="hero-grid">
       <section class="panel">
-        <h2>Hồ sơ người chơi</h2>
+        <h2>Hồ sơ người học</h2>
         <div class="profile-form">
           <label class="field">
             <span>Tên hiển thị</span>
@@ -1185,10 +1182,10 @@ async function renderProfile() {
         <div class="panel" style="margin-top: 14px;">
           <h2>Tiến trình</h2>
           <div class="stats-grid">
-            <div class="stat-card"><span>Vai trò</span><strong>${isAdmin() ? "Quản lý" : "Người chơi"}</strong></div>
+            <div class="stat-card"><span>Vai trò</span><strong>${isAdmin() ? "Quản lý" : "Người học"}</strong></div>
             <div class="stat-card"><span>Điểm gần nhất</span><strong>${profile.lastScore || 0}%</strong></div>
             <div class="stat-card"><span>Tình trạng</span><strong>${(profile.lastScore || 0) >= 70 ? "Ổn" : "Cần luyện"}</strong></div>
-            <div class="stat-card"><span>Lượt chơi</span><strong>${profile.plays}</strong></div>
+            <div class="stat-card"><span>Lượt luyện</span><strong>${profile.plays}</strong></div>
           </div>
         </div>
       </aside>
@@ -1212,7 +1209,7 @@ async function renderProfile() {
                 </span>
                 <span class="chip">${attempt.percent >= 70 ? "Đạt" : "Ôn lại"}</span>
               </li>
-            `).join("") : `<li><span></span><span>Chưa có lịch sử chơi.</span><span></span></li>`}
+            `).join("") : `<li><span></span><span>Chưa có lịch sử luyện tập.</span><span></span></li>`}
           </ul>
         </div>
         <div>
@@ -1267,7 +1264,7 @@ async function renderLeaderboard() {
   }
   app.innerHTML = `
     <section class="panel">
-      <h2>Leaderboard</h2>
+      <h2>Bảng xếp hạng</h2>
       <p class="muted">Đang tải bảng xếp hạng...</p>
     </section>
   `;
@@ -1299,13 +1296,13 @@ function renderLeaderboardEntries(entries) {
   if (currentView !== "leaderboard") return;
   app.innerHTML = `
     <section class="panel">
-      <h2>Leaderboard</h2>
+      <h2>Bảng xếp hạng</h2>
       <div class="chip-row">
         <span class="chip ${leaderboardMode === "firebase" ? "good" : "warn"}">${getLeaderboardLabel()}</span>
-        <span class="chip">Top 10 điểm cao</span>
+        <span class="chip">Top 10 kết quả</span>
         ${db ? `<span class="chip good">Realtime</span>` : ""}
       </div>
-      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này dùng chung cho mọi người khi đăng nhập và chơi quiz." : "Bảng điểm này chỉ lưu trên trình duyệt hiện tại."}</p>
+      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này dùng chung cho mọi người khi đăng nhập và làm bài." : "Bảng điểm này chỉ lưu trên trình duyệt hiện tại."}</p>
       <ul class="mini-list" style="margin-top: 18px;">
         ${entries.length ? entries.map((item, index) => `
           <li class="leader-row">
@@ -1316,11 +1313,11 @@ function renderLeaderboardEntries(entries) {
             </span>
             <strong>${item.percent}%</strong>
           </li>
-        `).join("") : `<li><span></span><span>Chưa có lượt chơi nào.</span><span></span></li>`}
+        `).join("") : `<li><span></span><span>Chưa có lượt luyện tập nào.</span><span></span></li>`}
       </ul>
       <div class="row-actions">
-        <button class="primary-btn" id="leaderPlay">Chơi để ghi điểm</button>
-        ${leaderboardMode === "local" ? `<button class="secondary-btn" id="clearLeader">Xóa leaderboard local</button>` : ""}
+        <button class="primary-btn" id="leaderPlay">Làm câu hỏi để ghi điểm</button>
+        ${leaderboardMode === "local" ? `<button class="secondary-btn" id="clearLeader">Xóa bảng điểm trên máy này</button>` : ""}
       </div>
     </section>
   `;
@@ -1372,14 +1369,14 @@ async function renderAdmin() {
           <h2>Quản lý nền tảng</h2>
           <div class="stats-grid">
             <div class="stat-card"><span>Tài khoản</span><strong>${users.length}</strong></div>
-            <div class="stat-card"><span>Người chơi</span><strong>${playerCount}</strong></div>
+            <div class="stat-card"><span>Người học</span><strong>${playerCount}</strong></div>
             <div class="stat-card"><span>Quản lý</span><strong>${adminCount}</strong></div>
             <div class="stat-card"><span>Điểm đã ghi</span><strong>${leaderboardEntries.length}</strong></div>
             <div class="stat-card"><span>Câu hỏi thêm</span><strong>${questions.length}</strong></div>
           </div>
           <div class="admin-note">
-            <strong>Người chơi không được can thiệp:</strong>
-            <p class="muted">Không xem danh sách user, không đổi vai trò, không xóa leaderboard, không sửa ngân hàng câu hỏi. Firestore Rules sẽ chặn các thao tác này kể cả khi mở DevTools.</p>
+            <strong>Người học không được can thiệp:</strong>
+            <p class="muted">Không xem danh sách tài khoản, không đổi vai trò, không xóa bảng xếp hạng, không sửa ngân hàng câu hỏi. Firestore Rules sẽ chặn các thao tác này kể cả khi mở DevTools.</p>
           </div>
         </section>
 
@@ -1390,7 +1387,7 @@ async function renderAdmin() {
               <li class="leader-row">
                 <strong>${user.role === "admin" ? "QL" : "SV"}</strong>
                 <span>
-                  <strong>${escapeHtml(user.name || user.email || "Người chơi")}</strong><br>
+                  <strong>${escapeHtml(user.name || user.email || "Người học")}</strong><br>
                   <span class="muted">${escapeHtml(user.email || "")} · ${escapeHtml(user.className || "Chưa có lớp/nhóm")} · ${user.plays || 0} lượt</span>
                 </span>
                 ${user.id === currentUser.uid
@@ -1398,7 +1395,7 @@ async function renderAdmin() {
                   : `<button class="secondary-btn role-btn" data-user="${user.id}" data-role="${user.role === "admin" ? "player" : "admin"}">${user.role === "admin" ? "Hạ quyền" : "Cấp QL"}</button>`
                 }
               </li>
-            `).join("") : `<li><span></span><span>Chưa có user.</span><span></span></li>`}
+            `).join("") : `<li><span></span><span>Chưa có tài khoản.</span><span></span></li>`}
           </ul>
         </section>
 
@@ -1417,7 +1414,7 @@ async function renderAdmin() {
             <button class="primary-btn" id="saveQuestionBtn">Lưu câu hỏi</button>
             <button class="secondary-btn" id="resetQuestionFormBtn">Nhập câu mới</button>
           </div>
-          <p class="muted" style="margin-top: 12px;">Câu hỏi admin thêm sẽ lưu trên Firestore và được trộn vào ngân hàng câu hỏi khi người học chơi.</p>
+          <p class="muted" style="margin-top: 12px;">Câu hỏi admin thêm sẽ lưu trên Firestore và được đưa vào ngân hàng câu hỏi khi người học làm bài.</p>
           <ul class="mini-list" style="margin-top: 18px;">
             ${questions.length ? questions.map((question) => `
               <li class="leader-row">
@@ -1436,18 +1433,18 @@ async function renderAdmin() {
         </section>
 
         <section class="panel admin-wide">
-          <h2>Duyệt leaderboard</h2>
+          <h2>Duyệt bảng xếp hạng</h2>
           <ul class="mini-list">
             ${leaderboardEntries.length ? leaderboardEntries.map((entry, index) => `
               <li class="leader-row">
                 <strong>#${index + 1}</strong>
                 <span>
-                  <strong>${escapeHtml(entry.name || "Người chơi")} · ${entry.percent}%</strong><br>
+                  <strong>${escapeHtml(entry.name || "Người học")} · ${entry.percent}%</strong><br>
                   <span class="muted">${escapeHtml(entry.mode || "")} · ${escapeHtml(entry.rank || "")} · ${entry.elapsed || 0}s · ${escapeHtml(entry.date || "")}</span>
                 </span>
                 <button class="secondary-btn danger-btn delete-score" data-entry="${entry.id}">Xóa</button>
               </li>
-            `).join("") : `<li><span></span><span>Chưa có điểm leaderboard.</span><span></span></li>`}
+            `).join("") : `<li><span></span><span>Chưa có kết quả trong bảng xếp hạng.</span><span></span></li>`}
           </ul>
         </section>
       </div>

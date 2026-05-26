@@ -1,63 +1,22 @@
 # TRUY TÌM CHÂN LÝ
 
-Interactive Philosophy Quiz Platform về phần **2.3.2. Lý luận nhận thức duy vật biện chứng**.
+Interactive Philosophy Learning Platform về phần **2.3.2. Lý luận nhận thức duy vật biện chứng**.
 
-Sản phẩm là một nền tảng mini học tập có thể tái sử dụng, chia sẻ cho sinh viên khác và mở rộng thêm nhiều bộ câu hỏi triết học sau này.
+## Tính năng chính
 
-## Tính năng
-
-- Trang chủ chọn chế độ chơi
-- 5 chế độ: AI nói thật hay sai, Fake News Hunter, Social Media Investigation, Truth Detective, Philosophy Challenge
+- 3 hình thức học rõ ràng: Luyện tập tổng hợp, Vụ án nhận thức, Kiểm tra 5 phút
 - Ngân hàng 50 câu hỏi chia 5 chủ đề
-- Random 10 câu mỗi lượt chơi
-- Hồ sơ người chơi, lịch sử luyện tập, điểm gần nhất
+- Ôn lại câu sai
+- Giải thích sâu sau mỗi câu
+- Bản đồ kiến thức và phiếu tổng kết học tập
+- Hồ sơ người học, lịch sử luyện tập, điểm gần nhất
 - Đăng ký/đăng nhập bằng Firebase Authentication
-- Hồ sơ người chơi lưu ở Firestore theo tài khoản
-- Leaderboard public bằng Firebase Firestore
-- Leaderboard realtime bằng Firestore listener
-- Lịch sử lượt chơi lưu trong `users/{uid}/attempts`
-- Thống kê cá nhân theo chủ đề từ lịch sử luyện tập
-- Quên mật khẩu qua Firebase Authentication
-- Phân quyền `player` và `admin`
-- Admin Panel: xem user, cấp/hạ quyền quản lý, xóa điểm leaderboard sai
-- Chế độ ôn câu sai, bản đồ kiến thức, phiếu tổng kết học tập
-- Admin thêm câu hỏi vào Firestore
-- Chế độ thi nhanh 5 phút và vụ án nhận thức theo câu chuyện 5 bước
-- Fallback leaderboard local nếu chưa cấu hình Firebase
-- Achievement sau mỗi lượt chơi
-- Analytics mini theo chủ đề sai/đúng
-- Share kết quả bằng Web Share API hoặc copy link
+- Bảng xếp hạng chung bằng Firebase Firestore
+- Admin Panel: quản lý người dùng, duyệt bảng xếp hạng, thêm/sửa/xóa câu hỏi
+- Huy hiệu học tập nhẹ, không dùng điểm ảo hay cấp độ
 - Dark/light mode
-- Chơi lại nhiều lần
 
-## Cấu trúc file
-
-```text
-truy-tim-chan-ly/
-├── .nojekyll
-├── firebase-config.js
-├── index.html
-├── style.css
-├── script.js
-└── README.md
-```
-
-## Cách bật Firebase
-
-1. Vào https://console.firebase.google.com/
-2. Tạo project mới.
-3. Thêm Web App.
-4. Copy Firebase config.
-5. Mở `firebase-config.js`.
-6. Đổi `enabled: false` thành `enabled: true`.
-7. Dán config thật vào object `config`.
-8. Vào `Authentication` -> `Get started`.
-9. Trong tab `Sign-in method`, bật `Email/Password`.
-10. Vào `Firestore Database` -> `Create database`.
-11. Chọn region gần Việt Nam nếu có.
-12. Vào tab `Rules` và dùng rule demo bên dưới.
-
-Rule phân quyền demo cho bài thuyết trình:
+## Firestore Rules
 
 ```js
 rules_version = '2';
@@ -70,35 +29,43 @@ service cloud.firestore {
 
     function isAdmin() {
       return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
 
-    match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
 
-      allow create: if signedIn() &&
-        request.auth.uid == userId &&
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+
+      allow create: if isOwner(userId) &&
         request.resource.data.role == "player";
 
-      allow update: if signedIn() && (
+      allow update: if
         (
-          request.auth.uid == userId &&
+          isOwner(userId) &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(["name", "className", "email", "plays", "lastScore", "updatedAt"])
+            .hasOnly(["name", "className", "email", "plays", "lastScore", "updatedAt"]) &&
+          request.resource.data.role == resource.data.role
         ) ||
-        isAdmin()
-      );
+        isAdmin();
+
+      allow delete: if isAdmin();
 
       match /attempts/{attemptId} {
-        allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
-        allow create: if signedIn() && request.auth.uid == userId;
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) &&
+          request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isAdmin();
       }
     }
 
     match /leaderboard/{docId} {
       allow read: if true;
-      allow create: if
-        signedIn() &&
+
+      allow create: if signedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.name is string &&
         request.resource.data.name.size() <= 28 &&
@@ -107,6 +74,7 @@ service cloud.firestore {
         request.resource.data.percent is number &&
         request.resource.data.elapsed is number;
 
+      allow update: if false;
       allow delete: if isAdmin();
     }
 
@@ -118,35 +86,10 @@ service cloud.firestore {
 }
 ```
 
-Tạo tài khoản quản lý đầu tiên:
+## Tạo quản lý đầu tiên
 
 1. Đăng ký tài khoản trên web.
 2. Vào Firebase Console -> Firestore Database -> collection `users`.
-3. Mở document có UID của tài khoản đó.
-4. Thêm/sửa field `role` thành string `admin`.
+3. Mở document của tài khoản đó.
+4. Sửa field `role` thành string `admin`.
 5. Refresh web, nút `Quản lý` sẽ xuất hiện.
-
-Phân quyền:
-
-- Người chơi: chơi quiz, sửa tên/lớp của chính mình, tạo lịch sử chơi, tạo điểm leaderboard.
-- Người chơi không được: xem danh sách user, đổi quyền, xóa leaderboard, sửa câu hỏi.
-- Quản lý: xem dashboard, đổi role user, xóa điểm leaderboard sai.
-- Ngân hàng câu hỏi nằm trong `script.js`, người chơi không sửa được qua giao diện; muốn sửa phải có quyền sửa repository/deploy.
-
-Lưu ý: rule này phù hợp demo/học tập. Nếu dùng sản phẩm thật lâu dài, nên thêm Cloud Functions để xác thực điểm số và chống spam.
-
-## Cách chạy
-
-Mở `index.html` bằng trình duyệt. Không cần cài đặt thư viện.
-
-## Deploy GitHub Pages
-
-1. Push code lên branch `main`.
-2. Vào `Settings` -> `Pages`.
-3. Chọn `Deploy from a branch`.
-4. Chọn branch `main`, folder `/root`.
-5. Bấm `Save`.
-
-## Gợi ý thuyết trình
-
-“Nhóm em không chỉ làm một sản phẩm phục vụ thuyết trình mà xây dựng một nền tảng mini học tập có thể tái sử dụng, chia sẻ cho sinh viên khác và mở rộng thêm nhiều bộ câu hỏi triết học sau này.”
