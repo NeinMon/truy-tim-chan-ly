@@ -11,8 +11,8 @@ Interactive Philosophy Learning Platform về phần **2.3.2. Lý luận nhận 
 - Bản đồ kiến thức và phiếu tổng kết học tập
 - Hồ sơ người học, lịch sử luyện tập, điểm gần nhất
 - Đăng ký/đăng nhập bằng Firebase Authentication
-- Bảng xếp hạng chung bằng Firebase Firestore
-- Admin Panel: quản lý người dùng, duyệt bảng xếp hạng, thêm/sửa/xóa câu hỏi
+- Bảng kết quả chung bằng Firebase Firestore
+- Admin Panel: quản lý người dùng, duyệt bảng kết quả, thêm/sửa/xóa câu hỏi
 - Huy hiệu học tập nhẹ, không dùng điểm ảo hay cấp độ
 - Dark/light mode
 

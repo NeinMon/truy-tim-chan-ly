@@ -7,7 +7,6 @@ let currentUser = null;
 let currentView = "home";
 let unsubscribeLeaderboard = null;
 let questionBank = [];
-let timedMode = false;
 let timerId = null;
 const firebaseSettings = window.TRUTH_FIREBASE_SETTINGS || { enabled: false, config: {} };
 
@@ -96,7 +95,7 @@ const STUDY_PATH = ["sensory", "rational", "practice", "truth"];
 const MODES = [
   { id: "practice", name: "Luyện tập tổng hợp", desc: "Làm 10 câu ngẫu nhiên để ôn toàn bộ quá trình nhận thức và chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
   { id: "case", name: "Vụ án nhận thức", desc: "Đi theo 5 bước điều tra: quan sát, thu thập dữ kiện, phân tích, kiểm nghiệm và kết luận.", pool: ["sensory", "rational", "practice", "truth", "life"] },
-  { id: "test", name: "Kiểm tra 5 phút", desc: "Làm bài có đồng hồ đếm ngược để tự đánh giá mức độ nắm kiến thức.", pool: ["sensory", "rational", "practice", "truth", "life"], timed: true }
+  { id: "test", name: "Kiểm tra 5 phút", desc: "Làm toàn bộ câu trong bộ đã chọn với đồng hồ đếm ngược để tự đánh giá mức độ nắm kiến thức.", pool: ["sensory", "rational", "practice", "truth", "life"], timed: true }
 ];
 
 const CASES = [
@@ -232,7 +231,7 @@ async function initFirebase() {
 }
 
 function getLeaderboardLabel() {
-  return leaderboardMode === "firebase" ? "Bảng xếp hạng chung" : "Bảng xếp hạng cá nhân";
+  return leaderboardMode === "firebase" ? "Bảng kết quả chung" : "Bảng kết quả cá nhân";
 }
 
 function load(key, fallback) {
@@ -724,10 +723,6 @@ function renderHome() {
             ${Object.entries(CATEGORIES).map(([id, name]) => `<option value="${id}" ${selectedCategory === id ? "selected" : ""}>${name}</option>`).join("")}
           </select>
         </label>
-        <label class="field inline-field">
-          <span>Đồng hồ 5 phút</span>
-          <input id="timedModeInput" type="checkbox" ${timedMode ? "checked" : ""}>
-        </label>
       </aside>
     </div>
   `;
@@ -740,9 +735,6 @@ function renderHome() {
   });
   document.querySelector("#categorySelect").addEventListener("change", (event) => {
     selectedCategory = event.target.value;
-  });
-  document.querySelector("#timedModeInput").addEventListener("change", (event) => {
-    timedMode = event.target.checked;
   });
   document.querySelector("#quickStart").addEventListener("click", startQuiz);
   document.querySelector("#reviewWrongBtn").addEventListener("click", startWrongReview);
@@ -764,14 +756,16 @@ function startQuiz() {
     pool = questionBank.filter((question) => question.category === selectedCategory);
   }
 
+  const questionCount = mode.id === "test" ? pool.length : Math.min(10, pool.length);
+
   quiz = {
     mode,
-    questions: shuffle(pool).slice(0, 10),
+    questions: shuffle(pool).slice(0, questionCount),
     index: 0,
     score: 0,
     answers: [],
     startedAt: Date.now(),
-    deadline: (timedMode || mode.timed) ? Date.now() + 5 * 60 * 1000 : null,
+    deadline: mode.timed ? Date.now() + 5 * 60 * 1000 : null,
     caseFile: null
   };
 
@@ -797,7 +791,7 @@ function startCaseInvestigation(mode) {
     score: 0,
     answers: [],
     startedAt: Date.now(),
-    deadline: (timedMode || mode.timed) ? Date.now() + 5 * 60 * 1000 : null,
+    deadline: mode.timed ? Date.now() + 5 * 60 * 1000 : null,
     caseFile
   };
   startTimer();
@@ -1152,14 +1146,14 @@ async function renderProfile() {
       ? `
         <div class="panel">
           <h2>Tài khoản</h2>
-          <p class="muted">Đã đăng nhập bằng <strong>${escapeHtml(currentUser.email || "")}</strong>. Hồ sơ, lịch sử luyện tập và bảng xếp hạng sẽ được đồng bộ.</p>
+          <p class="muted">Đã đăng nhập bằng <strong>${escapeHtml(currentUser.email || "")}</strong>. Hồ sơ, lịch sử luyện tập và bảng kết quả sẽ được đồng bộ.</p>
           <button class="secondary-btn" id="logoutBtn">Đăng xuất</button>
         </div>
       `
       : `
         <div class="panel">
           <h2>Đăng nhập / Đăng ký</h2>
-          <p class="muted">Đăng nhập để lưu hồ sơ, lịch sử luyện tập và điểm lên bảng xếp hạng chung.</p>
+          <p class="muted">Đăng nhập để lưu hồ sơ, lịch sử luyện tập và kết quả học tập.</p>
           <div class="profile-form">
             <label class="field">
               <span>Email</span>
@@ -1283,8 +1277,8 @@ async function renderLeaderboard() {
   }
   app.innerHTML = `
     <section class="panel">
-      <h2>Bảng xếp hạng</h2>
-      <p class="muted">Đang tải bảng xếp hạng...</p>
+      <h2>Bảng kết quả</h2>
+      <p class="muted">Đang tải bảng kết quả...</p>
     </section>
   `;
 
@@ -1315,13 +1309,13 @@ function renderLeaderboardEntries(entries) {
   if (currentView !== "leaderboard") return;
   app.innerHTML = `
     <section class="panel">
-      <h2>Bảng xếp hạng</h2>
+      <h2>Bảng kết quả</h2>
       <div class="chip-row">
         <span class="chip ${leaderboardMode === "firebase" ? "good" : "warn"}">${getLeaderboardLabel()}</span>
-        <span class="chip">Top 10 kết quả</span>
+        <span class="chip">Kết quả tiêu biểu</span>
         ${db ? `<span class="chip good">Tự cập nhật</span>` : ""}
       </div>
-      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này dùng chung cho mọi người khi đăng nhập và làm bài." : "Bảng điểm này chỉ lưu trên trình duyệt hiện tại."}</p>
+      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng này dùng để tham khảo kết quả học tập của người đã đăng nhập." : "Bảng này chỉ lưu trên trình duyệt hiện tại."}</p>
       <ul class="mini-list" style="margin-top: 18px;">
         ${entries.length ? entries.map((item, index) => `
           <li class="leader-row">
@@ -1335,8 +1329,8 @@ function renderLeaderboardEntries(entries) {
         `).join("") : `<li><span></span><span>Chưa có lượt luyện tập nào.</span><span></span></li>`}
       </ul>
       <div class="row-actions">
-        <button class="primary-btn" id="leaderPlay">Làm câu hỏi để ghi điểm</button>
-        ${leaderboardMode === "local" ? `<button class="secondary-btn" id="clearLeader">Xóa bảng điểm trên máy này</button>` : ""}
+        <button class="primary-btn" id="leaderPlay">Làm câu hỏi</button>
+        ${leaderboardMode === "local" ? `<button class="secondary-btn" id="clearLeader">Xóa kết quả trên máy này</button>` : ""}
       </div>
     </section>
   `;
@@ -1395,7 +1389,7 @@ async function renderAdmin() {
           </div>
           <div class="admin-note">
             <strong>Người học không được can thiệp:</strong>
-            <p class="muted">Không xem danh sách tài khoản, không đổi vai trò, không xóa bảng xếp hạng, không sửa ngân hàng câu hỏi. Hệ thống phân quyền sẽ chặn các thao tác không hợp lệ.</p>
+            <p class="muted">Không xem danh sách tài khoản, không đổi vai trò, không xóa bảng kết quả, không sửa ngân hàng câu hỏi. Hệ thống phân quyền sẽ chặn các thao tác không hợp lệ.</p>
           </div>
         </section>
 
@@ -1452,7 +1446,7 @@ async function renderAdmin() {
         </section>
 
         <section class="panel admin-wide">
-          <h2>Duyệt bảng xếp hạng</h2>
+          <h2>Duyệt bảng kết quả</h2>
           <ul class="mini-list">
             ${leaderboardEntries.length ? leaderboardEntries.map((entry, index) => `
               <li class="leader-row">
@@ -1463,7 +1457,7 @@ async function renderAdmin() {
                 </span>
                 <button class="secondary-btn danger-btn delete-score" data-entry="${entry.id}">Xóa</button>
               </li>
-            `).join("") : `<li><span></span><span>Chưa có kết quả trong bảng xếp hạng.</span><span></span></li>`}
+            `).join("") : `<li><span></span><span>Chưa có kết quả học tập.</span><span></span></li>`}
           </ul>
         </section>
       </div>
