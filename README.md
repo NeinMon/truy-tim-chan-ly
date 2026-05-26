@@ -11,6 +11,8 @@ Sản phẩm là một nền tảng mini học tập có thể tái sử dụng,
 - Ngân hàng 50 câu hỏi chia 5 chủ đề
 - Random 10 câu mỗi lượt chơi
 - Hồ sơ người chơi, cấp độ, XP
+- Đăng ký/đăng nhập bằng Firebase Authentication
+- Hồ sơ người chơi lưu ở Firestore theo tài khoản
 - Leaderboard public bằng Firebase Firestore
 - Fallback leaderboard local nếu chưa cấu hình Firebase
 - Achievement sau mỗi lượt chơi
@@ -31,7 +33,7 @@ truy-tim-chan-ly/
 └── README.md
 ```
 
-## Cách bật Firebase Leaderboard
+## Cách bật Firebase
 
 1. Vào https://console.firebase.google.com/
 2. Tạo project mới.
@@ -40,9 +42,11 @@ truy-tim-chan-ly/
 5. Mở `firebase-config.js`.
 6. Đổi `enabled: false` thành `enabled: true`.
 7. Dán config thật vào object `config`.
-8. Vào `Firestore Database` -> `Create database`.
-9. Chọn region gần Việt Nam nếu có.
-10. Vào tab `Rules` và dùng rule demo bên dưới.
+8. Vào `Authentication` -> `Get started`.
+9. Trong tab `Sign-in method`, bật `Email/Password`.
+10. Vào `Firestore Database` -> `Create database`.
+11. Chọn region gần Việt Nam nếu có.
+12. Vào tab `Rules` và dùng rule demo bên dưới.
 
 Rule demo cho bài thuyết trình:
 
@@ -51,9 +55,15 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+    }
+
     match /leaderboard/{docId} {
       allow read: if true;
       allow create: if
+        request.auth != null &&
+        request.resource.data.userId == request.auth.uid &&
         request.resource.data.name is string &&
         request.resource.data.name.size() <= 28 &&
         request.resource.data.score is number &&
@@ -65,7 +75,7 @@ service cloud.firestore {
 }
 ```
 
-Lưu ý: rule này phù hợp demo/học tập. Nếu dùng sản phẩm thật lâu dài, nên thêm đăng nhập hoặc Cloud Functions để chống spam điểm.
+Lưu ý: rule này phù hợp demo/học tập. Nếu dùng sản phẩm thật lâu dài, nên thêm Cloud Functions để xác thực điểm số và chống spam.
 
 ## Cách chạy
 

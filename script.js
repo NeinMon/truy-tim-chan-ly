@@ -1,6 +1,10 @@
 let db = null;
 let leaderboardMode = "local";
 let firebaseApi = null;
+let auth = null;
+let authApi = null;
+let currentUser = null;
+let currentView = "home";
 const firebaseSettings = window.TRUTH_FIREBASE_SETTINGS || { enabled: false, config: {} };
 
 const QUESTION_BANK = [
@@ -111,18 +115,39 @@ async function initFirebase() {
   if (!hasFirebaseConfig()) return;
 
   try {
-    const [appModule, firestoreModule] = await Promise.all([
+    const [appModule, firestoreModule, authModule] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
-      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js")
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js")
     ]);
 
     firebaseApi = firestoreModule;
+    authApi = authModule;
     const appInstance = appModule.initializeApp(firebaseSettings.config);
     db = firestoreModule.getFirestore(appInstance);
+    auth = authModule.getAuth(appInstance);
     leaderboardMode = "firebase";
+    authModule.onAuthStateChanged(auth, async (user) => {
+      currentUser = user;
+      try {
+        if (user) {
+          await loadCloudProfile(user);
+        } else {
+          profile = load("truthProfile", { name: "Khách", className: "", xp: 0, best: 0, plays: 0 });
+        }
+      } catch (error) {
+        console.warn("Could not load cloud profile, using local profile.", error);
+        profile = load("truthProfile", getDefaultProfile(user));
+      }
+      syncHud();
+      if (currentView === "profile") renderProfile();
+      if (currentView === "home") renderHome();
+    });
   } catch (error) {
     console.warn("Firebase init failed, using local leaderboard.", error);
     db = null;
+    auth = null;
+    authApi = null;
     leaderboardMode = "local";
   }
 }
@@ -143,10 +168,74 @@ function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function getDefaultProfile(user = null) {
+  return {
+    name: user?.displayName || user?.email?.split("@")[0] || "Khách",
+    className: "",
+    email: user?.email || "",
+    xp: 0,
+    best: 0,
+    plays: 0
+  };
+}
+
+async function loadCloudProfile(user) {
+  if (!db || !firebaseApi || !user) return;
+
+  const ref = firebaseApi.doc(db, "users", user.uid);
+  const snapshot = await firebaseApi.getDoc(ref);
+
+  if (snapshot.exists()) {
+    profile = { ...getDefaultProfile(user), ...snapshot.data(), email: user.email || "" };
+  } else {
+    profile = getDefaultProfile(user);
+    await firebaseApi.setDoc(ref, {
+      ...profile,
+      createdAt: firebaseApi.serverTimestamp(),
+      updatedAt: firebaseApi.serverTimestamp()
+    });
+  }
+}
+
+async function saveCloudProfile() {
+  if (!db || !firebaseApi || !currentUser) {
+    save("truthProfile", profile);
+    return;
+  }
+
+  try {
+    await firebaseApi.setDoc(
+      firebaseApi.doc(db, "users", currentUser.uid),
+      {
+        name: profile.name,
+        className: profile.className,
+        email: currentUser.email || profile.email || "",
+        xp: profile.xp,
+        best: profile.best,
+        plays: profile.plays,
+        updatedAt: firebaseApi.serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    if (authApi && auth && auth.currentUser && auth.currentUser.displayName !== profile.name) {
+      await authApi.updateProfile(auth.currentUser, { displayName: profile.name });
+    }
+  } catch (error) {
+    console.warn("Could not save cloud profile, using local fallback.", error);
+    save("truthProfile", profile);
+  }
+}
+
+function canUseCloudLeaderboard() {
+  return Boolean(db && firebaseApi && currentUser);
+}
+
 async function saveLeaderboardResult(result) {
   const normalizedResult = {
     name: result.name.slice(0, 28),
     className: (profile.className || "").slice(0, 36),
+    userId: currentUser?.uid || "local",
     mode: result.mode,
     score: result.score,
     total: result.total,
@@ -157,7 +246,7 @@ async function saveLeaderboardResult(result) {
     createdAtMs: Date.now()
   };
 
-  if (db) {
+  if (canUseCloudLeaderboard()) {
     try {
       await firebaseApi.addDoc(firebaseApi.collection(db, "leaderboard"), {
         ...normalizedResult,
@@ -244,6 +333,7 @@ function syncHud() {
 }
 
 function setView(view) {
+  currentView = view;
   if (view === "profile") return renderProfile();
   if (view === "leaderboard") return renderLeaderboard();
   renderHome();
@@ -266,6 +356,7 @@ if (localStorage.getItem("truthTheme") === "dark") {
 }
 
 function renderHome() {
+  currentView = "home";
   const modeCards = MODES.map((mode) => `
     <button class="mode-card ${mode.id === selectedMode ? "active" : ""}" data-mode="${mode.id}">
       <strong>${mode.name}</strong>
@@ -284,6 +375,7 @@ function renderHome() {
           <span class="chip">5 chủ đề</span>
           <span class="chip">Random mỗi lượt</span>
           <span class="chip warn">${getLeaderboardLabel()}</span>
+          <span class="chip ${currentUser ? "good" : "warn"}">${currentUser ? "Đã đăng nhập" : "Đăng nhập để lưu public"}</span>
         </div>
         <div class="hero-actions">
           <button class="primary-btn" id="quickStart">Bắt đầu chơi</button>
@@ -321,6 +413,7 @@ function renderHome() {
 }
 
 function startQuiz() {
+  currentView = "quiz";
   const mode = MODES.find((item) => item.id === selectedMode);
   let pool = QUESTION_BANK.filter((question) => mode.pool.includes(question.category));
 
@@ -429,7 +522,7 @@ async function finishQuiz() {
   profile.xp += xpGain;
   profile.best = Math.max(profile.best, scorePercent);
   profile.plays += 1;
-  save("truthProfile", profile);
+  await saveCloudProfile();
 
   await saveLeaderboardResult(result);
   syncHud();
@@ -460,6 +553,7 @@ function getCategoryStats(answers) {
 }
 
 function renderResult(result, xpGain) {
+  currentView = "result";
   const achievements = getAchievements(result);
   const categoryStats = getCategoryStats(quiz.answers);
   const shareText = `Tôi đạt rank "${result.rank}" với ${result.score}/${result.total} điểm trên TRUY TÌM CHÂN LÝ.`;
@@ -543,7 +637,86 @@ async function copyShareText(text) {
   alert("Đã copy kết quả để chia sẻ.");
 }
 
+async function handleAuth(action) {
+  const email = document.querySelector("#emailInput")?.value.trim();
+  const password = document.querySelector("#passwordInput")?.value;
+  const message = document.querySelector("#authMessage");
+
+  if (!email || !password) {
+    if (message) message.textContent = "Vui lòng nhập email và mật khẩu.";
+    return;
+  }
+
+  try {
+    if (message) message.textContent = "Đang xử lý...";
+
+    if (action === "register") {
+      const credential = await authApi.createUserWithEmailAndPassword(auth, email, password);
+      const suggestedName = profile.name && profile.name !== "Khách" ? profile.name : email.split("@")[0];
+      await authApi.updateProfile(credential.user, { displayName: suggestedName });
+      currentUser = credential.user;
+      profile = { ...getDefaultProfile(credential.user), name: suggestedName };
+      await saveCloudProfile();
+    } else {
+      await authApi.signInWithEmailAndPassword(auth, email, password);
+    }
+
+    await loadCloudProfile(auth.currentUser);
+    syncHud();
+    renderProfile();
+  } catch (error) {
+    const friendly = {
+      "auth/email-already-in-use": "Email này đã được đăng ký.",
+      "auth/invalid-email": "Email không hợp lệ.",
+      "auth/weak-password": "Mật khẩu nên có ít nhất 6 ký tự.",
+      "auth/invalid-credential": "Email hoặc mật khẩu chưa đúng.",
+      "auth/user-not-found": "Chưa có tài khoản với email này.",
+      "auth/wrong-password": "Mật khẩu chưa đúng."
+    };
+    if (message) message.textContent = friendly[error.code] || "Không đăng nhập được. Kiểm tra Firebase Authentication đã bật Email/Password chưa.";
+  }
+}
+
 function renderProfile() {
+  currentView = "profile";
+  const isCloudReady = Boolean(auth && db);
+  const authPanel = !isCloudReady
+    ? `
+      <div class="panel">
+        <h2>Tài khoản Firebase</h2>
+        <p class="muted">Firebase chưa sẵn sàng, hồ sơ đang lưu local trên trình duyệt này.</p>
+      </div>
+    `
+    : currentUser
+      ? `
+        <div class="panel">
+          <h2>Tài khoản</h2>
+          <p class="muted">Đã đăng nhập bằng <strong>${escapeHtml(currentUser.email || "")}</strong>. Hồ sơ, XP và leaderboard sẽ đồng bộ qua Firebase.</p>
+          <button class="secondary-btn" id="logoutBtn">Đăng xuất</button>
+        </div>
+      `
+      : `
+        <div class="panel">
+          <h2>Đăng nhập / Đăng ký</h2>
+          <p class="muted">Đăng nhập để lưu hồ sơ, XP và điểm leaderboard public trên Firebase.</p>
+          <div class="profile-form">
+            <label class="field">
+              <span>Email</span>
+              <input id="emailInput" type="email" autocomplete="email" placeholder="tenban@email.com">
+            </label>
+            <label class="field">
+              <span>Mật khẩu</span>
+              <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Tối thiểu 6 ký tự">
+            </label>
+            <p class="muted" id="authMessage"></p>
+            <div class="row-actions">
+              <button class="primary-btn" id="loginBtn">Đăng nhập</button>
+              <button class="secondary-btn" id="registerBtn">Đăng ký</button>
+            </div>
+          </div>
+        </div>
+      `;
+
   app.innerHTML = `
     <div class="hero-grid">
       <section class="panel">
@@ -561,28 +734,46 @@ function renderProfile() {
         </div>
       </section>
 
-      <aside class="panel">
-        <h2>Tiến trình</h2>
-        <div class="stats-grid">
-          <div class="stat-card"><span>Cấp độ</span><strong>${getLevel(profile.xp)}</strong></div>
-          <div class="stat-card"><span>XP</span><strong>${profile.xp}</strong></div>
-          <div class="stat-card"><span>Best score</span><strong>${profile.best}%</strong></div>
-          <div class="stat-card"><span>Lượt chơi</span><strong>${profile.plays}</strong></div>
+      <aside>
+        ${authPanel}
+        <div class="panel" style="margin-top: 14px;">
+          <h2>Tiến trình</h2>
+          <div class="stats-grid">
+            <div class="stat-card"><span>Cấp độ</span><strong>${getLevel(profile.xp)}</strong></div>
+            <div class="stat-card"><span>XP</span><strong>${profile.xp}</strong></div>
+            <div class="stat-card"><span>Best score</span><strong>${profile.best}%</strong></div>
+            <div class="stat-card"><span>Lượt chơi</span><strong>${profile.plays}</strong></div>
+          </div>
         </div>
       </aside>
     </div>
   `;
 
-  document.querySelector("#saveProfile").addEventListener("click", () => {
+  document.querySelector("#saveProfile").addEventListener("click", async () => {
     profile.name = document.querySelector("#nameInput").value.trim() || "Khách";
     profile.className = document.querySelector("#classInput").value.trim();
-    save("truthProfile", profile);
+    await saveCloudProfile();
     syncHud();
     renderHome();
+  });
+
+  const loginBtn = document.querySelector("#loginBtn");
+  const registerBtn = document.querySelector("#registerBtn");
+  const logoutBtn = document.querySelector("#logoutBtn");
+
+  if (loginBtn) loginBtn.addEventListener("click", () => handleAuth("login"));
+  if (registerBtn) registerBtn.addEventListener("click", () => handleAuth("register"));
+  if (logoutBtn) logoutBtn.addEventListener("click", async () => {
+    await authApi.signOut(auth);
+    currentUser = null;
+    profile = load("truthProfile", { name: "Khách", className: "", xp: 0, best: 0, plays: 0 });
+    syncHud();
+    renderProfile();
   });
 }
 
 async function renderLeaderboard() {
+  currentView = "leaderboard";
   app.innerHTML = `
     <section class="panel">
       <h2>Leaderboard</h2>
