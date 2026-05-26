@@ -81,11 +81,11 @@ const CATEGORIES = {
 };
 
 const MODES = [
-  { id: "ai", name: "AI nói thật hay sai?", desc: "Điều tra các câu trả lời AI có thể gây nhầm lẫn.", pool: ["rational", "practice", "life"] },
-  { id: "fake", name: "Fake News Hunter", desc: "Săn tin giả bằng cảm tính, lý tính và thực tiễn.", pool: ["sensory", "rational", "practice", "life"] },
-  { id: "social", name: "Social Media Investigation", desc: "Phân tích lượt share, bình luận và hiệu ứng số đông.", pool: ["sensory", "life", "truth"] },
-  { id: "detective", name: "Truth Detective", desc: "Vụ án đầy đủ từ hiện tượng đến chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
-  { id: "challenge", name: "Philosophy Challenge", desc: "Thử thách nhanh toàn bộ 5 nhóm kiến thức.", pool: ["sensory", "rational", "practice", "truth"] }
+  { id: "ai", name: "AI nói thật hay sai?", desc: "Tập trung vào cách kiểm tra câu trả lời AI: không tin ngay, tìm nguồn, đối chiếu và kiểm chứng.", pool: ["rational", "practice", "life"] },
+  { id: "fake", name: "Săn tin giả", desc: "Luyện quy trình phát hiện fake news: nhận diện dấu hiệu cảm tính, phân tích dữ kiện, kiểm tra thực tế.", pool: ["sensory", "rational", "practice", "life"] },
+  { id: "social", name: "Điều tra mạng xã hội", desc: "Xử lý các tình huống viral, lượt share, bình luận số đông và tin đồn trên mạng.", pool: ["sensory", "life", "truth"] },
+  { id: "detective", name: "Thám tử chân lý", desc: "Chế độ tổng hợp: đi đủ lộ trình từ nhận thức cảm tính đến lý tính, thực tiễn và chân lý.", pool: ["sensory", "rational", "practice", "truth", "life"] },
+  { id: "challenge", name: "Thử thách triết học", desc: "Kiểm tra nhanh kiến thức lý thuyết trọng tâm trong cả 5 nhóm câu hỏi.", pool: ["sensory", "rational", "practice", "truth"] }
 ];
 
 const app = document.querySelector("#app");
@@ -155,7 +155,7 @@ async function initFirebase() {
 }
 
 function getLeaderboardLabel() {
-  return leaderboardMode === "firebase" ? "Leaderboard public Firebase" : "Leaderboard local";
+  return leaderboardMode === "firebase" ? "Bảng xếp hạng chung" : "Bảng xếp hạng trên máy này";
 }
 
 function load(key, fallback) {
@@ -483,15 +483,15 @@ function renderHome() {
   app.innerHTML = `
     <div class="hero-grid">
       <section class="hero-copy">
-        <p class="eyebrow">Nền tảng quiz triết học tương tác</p>
-        <h1>TRUY TÌM CHÂN LÝ</h1>
-        <p class="lead">Chọn một vụ án nhận thức, trả lời 10 câu ngẫu nhiên từ ngân hàng 50 câu, mở khóa huy hiệu, leo leaderboard và chia sẻ kết quả cho bạn bè.</p>
+      <p class="eyebrow">Nền tảng quiz triết học tương tác</p>
+      <h1>TRUY TÌM CHÂN LÝ</h1>
+        <p class="lead">Chọn một kiểu tình huống, trả lời 10 câu ngẫu nhiên từ ngân hàng 50 câu, mở khóa huy hiệu, leo bảng xếp hạng và chia sẻ kết quả cho bạn bè.</p>
         <div class="chip-row">
           <span class="chip good">50 câu hỏi</span>
           <span class="chip">5 chủ đề</span>
           <span class="chip">Random mỗi lượt</span>
           <span class="chip warn">${getLeaderboardLabel()}</span>
-          <span class="chip ${currentUser ? "good" : "warn"}">${currentUser ? "Đã đăng nhập" : "Đăng nhập để lưu public"}</span>
+          <span class="chip ${currentUser ? "good" : "warn"}">${currentUser ? "Đã đăng nhập" : "Đăng nhập để lưu điểm"}</span>
         </div>
         <div class="hero-actions">
           <button class="primary-btn" id="quickStart">Bắt đầu chơi</button>
@@ -501,6 +501,7 @@ function renderHome() {
 
       <aside class="panel">
         <h2>Chọn chế độ</h2>
+        <p class="muted">Mỗi chế độ chỉ khác cách trộn câu hỏi và bối cảnh luyện tập. Bạn có thể chọn theo phần muốn ôn.</p>
         <div class="mode-grid">${modeCards}</div>
 
         <h3 style="margin-top: 20px;">Bộ câu hỏi</h3>
@@ -833,14 +834,14 @@ async function renderProfile() {
       ? `
         <div class="panel">
           <h2>Tài khoản</h2>
-          <p class="muted">Đã đăng nhập bằng <strong>${escapeHtml(currentUser.email || "")}</strong>. Hồ sơ, XP và leaderboard sẽ đồng bộ qua Firebase.</p>
+          <p class="muted">Đã đăng nhập bằng <strong>${escapeHtml(currentUser.email || "")}</strong>. Hồ sơ, XP và bảng xếp hạng sẽ được đồng bộ.</p>
           <button class="secondary-btn" id="logoutBtn">Đăng xuất</button>
         </div>
       `
       : `
         <div class="panel">
           <h2>Đăng nhập / Đăng ký</h2>
-          <p class="muted">Đăng nhập để lưu hồ sơ, XP và điểm leaderboard public trên Firebase.</p>
+          <p class="muted">Đăng nhập để lưu hồ sơ, XP và điểm lên bảng xếp hạng chung.</p>
           <div class="profile-form">
             <label class="field">
               <span>Email</span>
@@ -894,7 +895,7 @@ async function renderProfile() {
     <section class="panel profile-insights">
       <div>
         <h2>Lịch sử luyện tập</h2>
-        <p class="muted">${currentUser ? "Lưu trên Firebase theo tài khoản đang đăng nhập." : "Đăng nhập để đồng bộ lịch sử giữa nhiều thiết bị."}</p>
+        <p class="muted">${currentUser ? "Lưu theo tài khoản đang đăng nhập." : "Đăng nhập để đồng bộ lịch sử giữa nhiều thiết bị."}</p>
       </div>
       <div class="history-grid">
         <div>
@@ -965,7 +966,7 @@ async function renderLeaderboard() {
   app.innerHTML = `
     <section class="panel">
       <h2>Leaderboard</h2>
-      <p class="muted">Đang tải ${getLeaderboardLabel().toLowerCase()}...</p>
+      <p class="muted">Đang tải bảng xếp hạng...</p>
     </section>
   `;
 
@@ -1002,7 +1003,7 @@ function renderLeaderboardEntries(entries) {
         <span class="chip">Top 10 điểm cao</span>
         ${db ? `<span class="chip good">Realtime</span>` : ""}
       </div>
-      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này đồng bộ public bằng Firebase Firestore, người khác mở link cũng thấy chung." : "Chưa bật Firebase hoặc Firebase đang lỗi, hệ thống đang dùng bảng điểm local trên thiết bị này."}</p>
+      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này dùng chung cho mọi người khi đăng nhập và chơi quiz." : "Bảng điểm này chỉ lưu trên trình duyệt hiện tại."}</p>
       <ul class="mini-list" style="margin-top: 18px;">
         ${entries.length ? entries.map((item, index) => `
           <li class="leader-row">
