@@ -80,7 +80,7 @@ const CATEGORIES = {
   rational: "Nhận thức lý tính",
   practice: "Vai trò thực tiễn",
   truth: "Chân lý",
-  life: "AI/Fake news đời sống"
+  life: "Vận dụng đời sống"
 };
 
 const CATEGORY_THEORY = {
@@ -88,7 +88,7 @@ const CATEGORY_THEORY = {
   rational: "Nhận thức lý tính dùng khái niệm, phán đoán và suy lý để đi sâu vào bản chất.",
   practice: "Thực tiễn là cơ sở, động lực, mục đích và tiêu chuẩn kiểm nghiệm chân lý.",
   truth: "Chân lý là tri thức phù hợp hiện thực khách quan và được thực tiễn kiểm nghiệm; chân lý có tính khách quan, cụ thể.",
-  life: "Các tình huống đời sống giúp vận dụng quy trình: quan sát, phân tích, kiểm chứng, kết luận."
+  life: "Tình huống đời sống giúp vận dụng lộ trình nhận thức: quan sát, phân tích, kiểm chứng và kết luận."
 };
 
 const STUDY_PATH = ["sensory", "rational", "practice", "truth"];
@@ -525,6 +525,11 @@ function getConceptTips(categoryStats) {
   const sorted = Object.entries(categoryStats).sort((a, b) => percent(a[1].correct, a[1].total) - percent(b[1].correct, b[1].total));
   const weakest = sorted[0]?.[0];
   const strongest = sorted[sorted.length - 1]?.[0];
+  const reading = weakest === "life"
+    ? "Nên đọc lại lộ trình cảm tính -> lý tính -> thực tiễn -> chân lý trong mục 2.3.2, rồi vận dụng vào tình huống đời sống."
+    : weakest
+      ? `Nên đọc lại phần ${CATEGORIES[weakest]} trong mục 2.3.2.`
+      : "Nên đọc lại giáo trình từ trang 274 đến 283.";
   return {
     strongest: strongest ? CATEGORIES[strongest] : "Chưa đủ dữ liệu",
     weakest: weakest ? CATEGORIES[weakest] : "Chưa đủ dữ liệu",
@@ -533,11 +538,12 @@ function getConceptTips(categoryStats) {
       "Thực tiễn là tiêu chuẩn kiểm nghiệm chân lý.",
       "Chân lý có tính khách quan và tính cụ thể."
     ],
-    reading: weakest ? `Nên đọc lại phần ${CATEGORIES[weakest]} trong mục 2.3.2.` : "Nên đọc lại giáo trình từ trang 274 đến 283."
+    reading
   };
 }
 
 function renderKnowledgeMap(categoryStats) {
+  const hasStudyData = STUDY_PATH.some((category) => categoryStats[category]?.total);
   return `
     <div class="knowledge-map">
       ${STUDY_PATH.map((category, index) => {
@@ -549,6 +555,29 @@ function renderKnowledgeMap(categoryStats) {
             <strong>${CATEGORIES[category]}</strong>
             <div class="meter"><span style="width:${value}%"></span></div>
             <small>${stat.total ? `${value}% đúng` : "Chưa có dữ liệu"}</small>
+          </div>
+        `;
+      }).join("")}
+    </div>
+    ${hasStudyData ? "" : `<p class="muted" style="margin-top: 12px;">Lượt này chưa có câu thuộc 4 bước lý thuyết. Nếu muốn xem đủ bản đồ, hãy chọn "Trộn tất cả chủ đề" hoặc ôn từng chủ đề lý thuyết.</p>`}
+  `;
+}
+
+function renderCategoryMeters(categoryStats) {
+  const entries = Object.entries(categoryStats);
+  if (!entries.length) {
+    return `<p class="muted">Chưa có dữ liệu thống kê cho lượt này.</p>`;
+  }
+
+  return `
+    <div class="category-meter">
+      ${entries.map(([category, stat]) => {
+        const value = percent(stat.correct, stat.total);
+        return `
+          <div class="meter-row">
+            <span>${CATEGORIES[category]}</span>
+            <div class="meter"><span style="width:${value}%"></span></div>
+            <strong>${value}%</strong>
           </div>
         `;
       }).join("")}
@@ -1005,19 +1034,9 @@ function renderResult(result) {
         <h2>Phân tích học tập</h2>
         <h3>Bản đồ kiến thức</h3>
         ${renderKnowledgeMap(categoryStats)}
-        <div class="category-meter">
-          ${Object.entries(categoryStats).map(([category, stat]) => {
-            const value = percent(stat.correct, stat.total);
-            return `
-              <div class="meter-row">
-                <span>${CATEGORIES[category]}</span>
-                <div class="meter"><span style="width:${value}%"></span></div>
-                <strong>${value}%</strong>
-              </div>
-            `;
-          }).join("")}
-        </div>
-        <p class="muted" style="margin-top: 18px;">Phần nào tỷ lệ thấp là phần nên ôn lại: cảm tính, lý tính, thực tiễn hay chân lý.</p>
+        <h3 style="margin-top: 18px;">Thống kê theo phần đã làm</h3>
+        ${renderCategoryMeters(categoryStats)}
+        <p class="muted" style="margin-top: 18px;">Bản đồ kiến thức bám 4 bước lý thuyết của bài thuyết trình. Phần vận dụng đời sống dùng để kiểm tra khả năng áp dụng 4 bước đó vào tình huống thực tế.</p>
       </aside>
     </div>
   `;
