@@ -382,6 +382,10 @@ async function saveLeaderboardResult(result) {
     createdAtMs: Date.now()
   };
 
+  leaderboard.unshift(normalizedResult);
+  leaderboard = sortResultEntries(leaderboard).slice(0, 20);
+  save("truthLeaderboard", leaderboard);
+
   if (canUseCloudLeaderboard()) {
     try {
       await firebaseApi.addDoc(firebaseApi.collection(db, "leaderboard"), {
@@ -394,12 +398,6 @@ async function saveLeaderboardResult(result) {
       leaderboardMode = "local";
     }
   }
-
-  leaderboard.unshift(normalizedResult);
-  leaderboard = leaderboard
-    .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || b.createdAtMs - a.createdAtMs)
-    .slice(0, 20);
-  save("truthLeaderboard", leaderboard);
 }
 
 async function saveAttempt(result) {
@@ -595,6 +593,8 @@ function renderDeepExplanation(item, selectedIndex) {
 }
 
 async function getLeaderboardEntries() {
+  const localEntries = getLocalLeaderboardEntries();
+
   if (db) {
     try {
       const snapshot = await firebaseApi.getDocs(
@@ -604,20 +604,48 @@ async function getLeaderboardEntries() {
           firebaseApi.limit(30)
         )
       );
-      return snapshot.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() }))
-        .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
-        .slice(0, 10);
+      const cloudEntries = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      return mergeResultEntries(cloudEntries, localEntries).slice(0, 10);
     } catch (error) {
       console.warn("Could not load Firebase leaderboard, using local fallback.", error);
       leaderboardMode = "local";
     }
   }
 
+  return localEntries.slice(0, 10);
+}
+
+function getLocalLeaderboardEntries() {
   leaderboard = load("truthLeaderboard", []);
-  return leaderboard
-    .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
-    .slice(0, 10);
+  return sortResultEntries(leaderboard);
+}
+
+function sortResultEntries(entries) {
+  return [...entries].sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0));
+}
+
+function sortRecentEntries(entries) {
+  return [...entries].sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+}
+
+function getResultKey(entry) {
+  return `${entry.userId || ""}-${entry.createdAtMs || ""}-${entry.score || 0}-${entry.total || 0}`;
+}
+
+function mergeResultEntries(cloudEntries, localEntries) {
+  const seen = new Set();
+  const merged = sortResultEntries([...localEntries, ...cloudEntries].filter((entry) => {
+    const key = getResultKey(entry);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }));
+  const latestLocal = sortRecentEntries(localEntries)[0];
+
+  if (!latestLocal) return merged;
+
+  const latestKey = getResultKey(latestLocal);
+  return [latestLocal, ...merged.filter((entry) => getResultKey(entry) !== latestKey)];
 }
 
 function shuffle(items) {
@@ -1294,10 +1322,9 @@ async function renderLeaderboard() {
       );
       unsubscribeLeaderboard = firebaseApi.onSnapshot(liveQuery, (snapshot) => {
         const liveEntries = snapshot.docs
-          .map((doc) => ({ id: doc.id, ...doc.data() }))
-          .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
-          .slice(0, 10);
-        renderLeaderboardEntries(liveEntries);
+          .map((doc) => ({ id: doc.id, ...doc.data() }));
+        const mergedEntries = mergeResultEntries(liveEntries, getLocalLeaderboardEntries()).slice(0, 10);
+        renderLeaderboardEntries(mergedEntries);
       });
     } catch (error) {
       console.warn("Could not subscribe leaderboard realtime.", error);
@@ -1313,6 +1340,7 @@ function renderLeaderboardEntries(entries) {
       <div class="chip-row">
         <span class="chip ${leaderboardMode === "firebase" ? "good" : "warn"}">${getLeaderboardLabel()}</span>
         <span class="chip">Kết quả tiêu biểu</span>
+        ${getLocalLeaderboardEntries().length ? `<span class="chip good">Có kết quả của bạn</span>` : ""}
         ${db ? `<span class="chip good">Tự cập nhật</span>` : ""}
       </div>
       <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng này dùng để tham khảo kết quả học tập của người đã đăng nhập." : "Bảng này chỉ lưu trên trình duyệt hiện tại."}</p>
