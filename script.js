@@ -1,11 +1,9 @@
 let db = null;
-let leaderboardMode = "local";
 let firebaseApi = null;
 let auth = null;
 let authApi = null;
 let currentUser = null;
 let currentView = "home";
-let unsubscribeLeaderboard = null;
 let questionBank = [];
 let timerId = null;
 const firebaseSettings = window.TRUTH_FIREBASE_SETTINGS || { enabled: false, config: {} };
@@ -204,7 +202,6 @@ async function initFirebase() {
     const appInstance = appModule.initializeApp(firebaseSettings.config);
     db = firestoreModule.getFirestore(appInstance);
     auth = authModule.getAuth(appInstance);
-    leaderboardMode = "firebase";
     authModule.onAuthStateChanged(auth, async (user) => {
       currentUser = user;
       try {
@@ -222,16 +219,11 @@ async function initFirebase() {
       if (currentView === "home") renderHome();
     });
   } catch (error) {
-    console.warn("Firebase init failed, using local leaderboard.", error);
+    console.warn("Firebase init failed, using local fallback.", error);
     db = null;
     auth = null;
     authApi = null;
-    leaderboardMode = "local";
   }
-}
-
-function getLeaderboardLabel() {
-  return leaderboardMode === "firebase" ? "Bảng kết quả chung" : "Bảng kết quả cá nhân";
 }
 
 function load(key, fallback) {
@@ -308,10 +300,6 @@ async function saveCloudProfile() {
   }
 }
 
-function canUseCloudLeaderboard() {
-  return Boolean(db && firebaseApi && currentUser);
-}
-
 function normalizeQuestion(question, index = 0) {
   return {
     id: question.id || `cloud-${Date.now()}-${index}`,
@@ -386,18 +374,6 @@ async function saveLeaderboardResult(result) {
   leaderboard = sortResultEntries(leaderboard).slice(0, 20);
   save("truthLeaderboard", leaderboard);
 
-  if (canUseCloudLeaderboard()) {
-    try {
-      await firebaseApi.addDoc(firebaseApi.collection(db, "leaderboard"), {
-        ...normalizedResult,
-        createdAt: firebaseApi.serverTimestamp()
-      });
-      return;
-    } catch (error) {
-      console.warn("Could not save Firebase leaderboard result, using local fallback.", error);
-      leaderboardMode = "local";
-    }
-  }
 }
 
 async function saveAttempt(result) {
@@ -453,19 +429,12 @@ async function getAttemptEntries() {
 
 async function getAdminData() {
   if (!db || !firebaseApi || !isAdmin()) {
-    return { users: [], leaderboardEntries: [] };
+    return { users: [], questions: [] };
   }
 
-  const [usersSnapshot, leaderboardSnapshot, questionsSnapshot] = await Promise.all([
+  const [usersSnapshot, questionsSnapshot] = await Promise.all([
     firebaseApi.getDocs(
       firebaseApi.query(firebaseApi.collection(db, "users"), firebaseApi.limit(100))
-    ),
-    firebaseApi.getDocs(
-      firebaseApi.query(
-        firebaseApi.collection(db, "leaderboard"),
-        firebaseApi.orderBy("percent", "desc"),
-        firebaseApi.limit(50)
-      )
     ),
     firebaseApi.getDocs(
       firebaseApi.query(firebaseApi.collection(db, "questions"), firebaseApi.limit(50))
@@ -474,7 +443,6 @@ async function getAdminData() {
 
   return {
     users: usersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-    leaderboardEntries: leaderboardSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
     questions: questionsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
   };
 }
@@ -485,11 +453,6 @@ async function updateUserRole(userId, role) {
     role,
     updatedAt: firebaseApi.serverTimestamp()
   });
-}
-
-async function deleteLeaderboardEntry(entryId) {
-  if (!db || !firebaseApi || !isAdmin()) return;
-  await firebaseApi.deleteDoc(firebaseApi.doc(db, "leaderboard", entryId));
 }
 
 function getAggregateStats(attempts) {
@@ -593,26 +556,7 @@ function renderDeepExplanation(item, selectedIndex) {
 }
 
 async function getLeaderboardEntries() {
-  const localEntries = getLocalLeaderboardEntries();
-
-  if (db) {
-    try {
-      const snapshot = await firebaseApi.getDocs(
-        firebaseApi.query(
-          firebaseApi.collection(db, "leaderboard"),
-          firebaseApi.orderBy("percent", "desc"),
-          firebaseApi.limit(30)
-        )
-      );
-      const cloudEntries = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      return mergeResultEntries(cloudEntries, localEntries).slice(0, 10);
-    } catch (error) {
-      console.warn("Could not load Firebase leaderboard, using local fallback.", error);
-      leaderboardMode = "local";
-    }
-  }
-
-  return localEntries.slice(0, 10);
+  return getLocalLeaderboardEntries().slice(0, 10);
 }
 
 function getLocalLeaderboardEntries() {
@@ -622,30 +566,6 @@ function getLocalLeaderboardEntries() {
 
 function sortResultEntries(entries) {
   return [...entries].sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0));
-}
-
-function sortRecentEntries(entries) {
-  return [...entries].sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
-}
-
-function getResultKey(entry) {
-  return `${entry.userId || ""}-${entry.createdAtMs || ""}-${entry.score || 0}-${entry.total || 0}`;
-}
-
-function mergeResultEntries(cloudEntries, localEntries) {
-  const seen = new Set();
-  const merged = sortResultEntries([...localEntries, ...cloudEntries].filter((entry) => {
-    const key = getResultKey(entry);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }));
-  const latestLocal = sortRecentEntries(localEntries)[0];
-
-  if (!latestLocal) return merged;
-
-  const latestKey = getResultKey(latestLocal);
-  return [latestLocal, ...merged.filter((entry) => getResultKey(entry) !== latestKey)];
 }
 
 function shuffle(items) {
@@ -683,10 +603,6 @@ function syncHud() {
 
 function setView(view) {
   currentView = view;
-  if (unsubscribeLeaderboard && view !== "leaderboard") {
-    unsubscribeLeaderboard();
-    unsubscribeLeaderboard = null;
-  }
   if (view === "admin") return renderAdmin();
   if (view === "profile") return renderProfile();
   if (view === "leaderboard") return renderLeaderboard();
@@ -728,7 +644,7 @@ function renderHome() {
           <span class="chip good">50 câu hỏi</span>
           <span class="chip">5 chủ đề</span>
           <span class="chip">Câu hỏi ngẫu nhiên</span>
-          <span class="chip warn">${getLeaderboardLabel()}</span>
+          <span class="chip warn">Bảng kết quả cá nhân</span>
           <span class="chip ${currentUser ? "good" : "warn"}">${currentUser ? "Đã đăng nhập" : "Đăng nhập để lưu điểm"}</span>
         </div>
         <div class="hero-actions">
@@ -1299,10 +1215,6 @@ async function renderProfile() {
 
 async function renderLeaderboard() {
   currentView = "leaderboard";
-  if (unsubscribeLeaderboard) {
-    unsubscribeLeaderboard();
-    unsubscribeLeaderboard = null;
-  }
   app.innerHTML = `
     <section class="panel">
       <h2>Bảng kết quả</h2>
@@ -1312,24 +1224,6 @@ async function renderLeaderboard() {
 
   const entries = await getLeaderboardEntries();
   renderLeaderboardEntries(entries);
-
-  if (db && firebaseApi) {
-    try {
-      const liveQuery = firebaseApi.query(
-        firebaseApi.collection(db, "leaderboard"),
-        firebaseApi.orderBy("percent", "desc"),
-        firebaseApi.limit(10)
-      );
-      unsubscribeLeaderboard = firebaseApi.onSnapshot(liveQuery, (snapshot) => {
-        const liveEntries = snapshot.docs
-          .map((doc) => ({ id: doc.id, ...doc.data() }));
-        const mergedEntries = mergeResultEntries(liveEntries, getLocalLeaderboardEntries()).slice(0, 10);
-        renderLeaderboardEntries(mergedEntries);
-      });
-    } catch (error) {
-      console.warn("Could not subscribe leaderboard realtime.", error);
-    }
-  }
 }
 
 function renderLeaderboardEntries(entries) {
@@ -1338,12 +1232,10 @@ function renderLeaderboardEntries(entries) {
     <section class="panel">
       <h2>Bảng kết quả</h2>
       <div class="chip-row">
-        <span class="chip ${leaderboardMode === "firebase" ? "good" : "warn"}">${getLeaderboardLabel()}</span>
-        <span class="chip">Kết quả tiêu biểu</span>
-        ${getLocalLeaderboardEntries().length ? `<span class="chip good">Có kết quả của bạn</span>` : ""}
-        ${db ? `<span class="chip good">Tự cập nhật</span>` : ""}
+        <span class="chip good">Kết quả cá nhân</span>
+        <span class="chip">10 kết quả tốt nhất</span>
       </div>
-      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng này dùng để tham khảo kết quả học tập của người đã đăng nhập." : "Bảng này chỉ lưu trên trình duyệt hiện tại."}</p>
+      <p class="muted" style="margin-top: 12px;">Bảng này chỉ hiển thị kết quả luyện tập của bạn trên trình duyệt hiện tại.</p>
       <ul class="mini-list" style="margin-top: 18px;">
         ${entries.length ? entries.map((item, index) => `
           <li class="leader-row">
@@ -1358,7 +1250,7 @@ function renderLeaderboardEntries(entries) {
       </ul>
       <div class="row-actions">
         <button class="primary-btn" id="leaderPlay">Làm câu hỏi</button>
-        ${leaderboardMode === "local" ? `<button class="secondary-btn" id="clearLeader">Xóa kết quả trên máy này</button>` : ""}
+        <button class="secondary-btn" id="clearLeader">Xóa kết quả trên máy này</button>
       </div>
     </section>
   `;
@@ -1399,7 +1291,7 @@ async function renderAdmin() {
   `;
 
   try {
-    const { users, leaderboardEntries, questions } = await getAdminData();
+    const { users, questions } = await getAdminData();
     const playerCount = users.filter((user) => user.role !== "admin").length;
     const adminCount = users.filter((user) => user.role === "admin").length;
 
@@ -1412,12 +1304,11 @@ async function renderAdmin() {
             <div class="stat-card"><span>Tài khoản</span><strong>${users.length}</strong></div>
             <div class="stat-card"><span>Người học</span><strong>${playerCount}</strong></div>
             <div class="stat-card"><span>Quản lý</span><strong>${adminCount}</strong></div>
-            <div class="stat-card"><span>Điểm đã ghi</span><strong>${leaderboardEntries.length}</strong></div>
             <div class="stat-card"><span>Câu hỏi thêm</span><strong>${questions.length}</strong></div>
           </div>
           <div class="admin-note">
             <strong>Người học không được can thiệp:</strong>
-            <p class="muted">Không xem danh sách tài khoản, không đổi vai trò, không xóa bảng kết quả, không sửa ngân hàng câu hỏi. Hệ thống phân quyền sẽ chặn các thao tác không hợp lệ.</p>
+            <p class="muted">Không xem danh sách tài khoản, không đổi vai trò, không sửa ngân hàng câu hỏi. Hệ thống phân quyền sẽ chặn các thao tác không hợp lệ.</p>
           </div>
         </section>
 
@@ -1473,21 +1364,6 @@ async function renderAdmin() {
           </ul>
         </section>
 
-        <section class="panel admin-wide">
-          <h2>Duyệt bảng kết quả</h2>
-          <ul class="mini-list">
-            ${leaderboardEntries.length ? leaderboardEntries.map((entry, index) => `
-              <li class="leader-row">
-                <strong>#${index + 1}</strong>
-                <span>
-                  <strong>${escapeHtml(entry.name || "Người học")} · ${entry.percent}%</strong><br>
-                  <span class="muted">${escapeHtml(entry.mode || "")} · ${escapeHtml(entry.rank || "")} · ${entry.elapsed || 0}s · ${escapeHtml(entry.date || "")}</span>
-                </span>
-                <button class="secondary-btn danger-btn delete-score" data-entry="${entry.id}">Xóa</button>
-              </li>
-            `).join("") : `<li><span></span><span>Chưa có kết quả học tập.</span><span></span></li>`}
-          </ul>
-        </section>
       </div>
     `;
 
@@ -1549,12 +1425,6 @@ async function renderAdmin() {
       });
     });
 
-    document.querySelectorAll(".delete-score").forEach((button) => {
-      button.addEventListener("click", async () => {
-        await deleteLeaderboardEntry(button.dataset.entry);
-        renderAdmin();
-      });
-    });
   } catch (error) {
     app.innerHTML = `
       <section class="panel">

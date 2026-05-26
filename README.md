@@ -11,8 +11,8 @@ Interactive Philosophy Learning Platform về phần **2.3.2. Lý luận nhận 
 - Bản đồ kiến thức và phiếu tổng kết học tập
 - Hồ sơ người học, lịch sử luyện tập, điểm gần nhất
 - Đăng ký/đăng nhập bằng Firebase Authentication
-- Bảng kết quả chung bằng Firebase Firestore
-- Admin Panel: quản lý người dùng, duyệt bảng kết quả, thêm/sửa/xóa câu hỏi
+- Bảng kết quả cá nhân trên trình duyệt
+- Admin Panel: quản lý người dùng, thêm/sửa/xóa câu hỏi
 - Huy hiệu học tập nhẹ, không dùng điểm ảo hay cấp độ
 - Dark/light mode
 
@@ -60,22 +60,6 @@ service cloud.firestore {
           request.resource.data.userId == request.auth.uid;
         allow update, delete: if isAdmin();
       }
-    }
-
-    match /leaderboard/{docId} {
-      allow read: if true;
-
-      allow create: if signedIn() &&
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.name is string &&
-        request.resource.data.name.size() <= 28 &&
-        request.resource.data.score is number &&
-        request.resource.data.total is number &&
-        request.resource.data.percent is number &&
-        request.resource.data.elapsed is number;
-
-      allow update: if false;
-      allow delete: if isAdmin();
     }
 
     match /questions/{questionId} {
