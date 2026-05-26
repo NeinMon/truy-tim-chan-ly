@@ -5,6 +5,7 @@ let auth = null;
 let authApi = null;
 let currentUser = null;
 let currentView = "home";
+let unsubscribeLeaderboard = null;
 const firebaseSettings = window.TRUTH_FIREBASE_SETTINGS || { enabled: false, config: {} };
 
 const QUESTION_BANK = [
@@ -266,6 +267,72 @@ async function saveLeaderboardResult(result) {
   save("truthLeaderboard", leaderboard);
 }
 
+async function saveAttempt(result, xpGain) {
+  const attempt = {
+    userId: currentUser?.uid || "local",
+    name: result.name.slice(0, 28),
+    mode: result.mode,
+    score: result.score,
+    total: result.total,
+    percent: result.percent,
+    rank: result.rank,
+    elapsed: result.elapsed,
+    xpGain,
+    date: result.date,
+    categoryStats: getCategoryStats(quiz.answers),
+    createdAtMs: Date.now()
+  };
+
+  if (db && firebaseApi && currentUser) {
+    try {
+      await firebaseApi.addDoc(firebaseApi.collection(db, "users", currentUser.uid, "attempts"), {
+        ...attempt,
+        createdAt: firebaseApi.serverTimestamp()
+      });
+      return;
+    } catch (error) {
+      console.warn("Could not save cloud attempt, using local fallback.", error);
+    }
+  }
+
+  const localAttempts = load("truthAttempts", []);
+  localAttempts.unshift(attempt);
+  save("truthAttempts", localAttempts.slice(0, 30));
+}
+
+async function getAttemptEntries() {
+  if (db && firebaseApi && currentUser) {
+    try {
+      const snapshot = await firebaseApi.getDocs(
+        firebaseApi.query(
+          firebaseApi.collection(db, "users", currentUser.uid, "attempts"),
+          firebaseApi.orderBy("createdAtMs", "desc"),
+          firebaseApi.limit(12)
+        )
+      );
+      return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+      console.warn("Could not load cloud attempts, using local fallback.", error);
+    }
+  }
+
+  return load("truthAttempts", []).slice(0, 12);
+}
+
+function getAggregateStats(attempts) {
+  const aggregate = {};
+
+  attempts.forEach((attempt) => {
+    Object.entries(attempt.categoryStats || {}).forEach(([category, stat]) => {
+      aggregate[category] ||= { total: 0, correct: 0 };
+      aggregate[category].total += stat.total || 0;
+      aggregate[category].correct += stat.correct || 0;
+    });
+  });
+
+  return aggregate;
+}
+
 async function getLeaderboardEntries() {
   if (db) {
     try {
@@ -334,6 +401,10 @@ function syncHud() {
 
 function setView(view) {
   currentView = view;
+  if (unsubscribeLeaderboard && view !== "leaderboard") {
+    unsubscribeLeaderboard();
+    unsubscribeLeaderboard = null;
+  }
   if (view === "profile") return renderProfile();
   if (view === "leaderboard") return renderLeaderboard();
   renderHome();
@@ -525,6 +596,7 @@ async function finishQuiz() {
   await saveCloudProfile();
 
   await saveLeaderboardResult(result);
+  await saveAttempt(result, xpGain);
   syncHud();
   renderResult(result, xpGain);
 }
@@ -670,15 +742,34 @@ async function handleAuth(action) {
       "auth/invalid-email": "Email không hợp lệ.",
       "auth/weak-password": "Mật khẩu nên có ít nhất 6 ký tự.",
       "auth/invalid-credential": "Email hoặc mật khẩu chưa đúng.",
-      "auth/user-not-found": "Chưa có tài khoản với email này.",
-      "auth/wrong-password": "Mật khẩu chưa đúng."
+    "auth/user-not-found": "Chưa có tài khoản với email này.",
+    "auth/wrong-password": "Mật khẩu chưa đúng."
     };
     if (message) message.textContent = friendly[error.code] || "Không đăng nhập được. Kiểm tra Firebase Authentication đã bật Email/Password chưa.";
   }
 }
 
-function renderProfile() {
+async function handlePasswordReset() {
+  const email = document.querySelector("#emailInput")?.value.trim();
+  const message = document.querySelector("#authMessage");
+
+  if (!email) {
+    if (message) message.textContent = "Nhập email trước để nhận link đặt lại mật khẩu.";
+    return;
+  }
+
+  try {
+    await authApi.sendPasswordResetEmail(auth, email);
+    if (message) message.textContent = "Đã gửi email đặt lại mật khẩu. Kiểm tra hộp thư của bạn.";
+  } catch (error) {
+    if (message) message.textContent = "Không gửi được email đặt lại mật khẩu. Kiểm tra email hoặc cấu hình Authentication.";
+  }
+}
+
+async function renderProfile() {
   currentView = "profile";
+  const attempts = await getAttemptEntries();
+  const aggregateStats = getAggregateStats(attempts);
   const isCloudReady = Boolean(auth && db);
   const authPanel = !isCloudReady
     ? `
@@ -712,6 +803,7 @@ function renderProfile() {
             <div class="row-actions">
               <button class="primary-btn" id="loginBtn">Đăng nhập</button>
               <button class="secondary-btn" id="registerBtn">Đăng ký</button>
+              <button class="secondary-btn" id="resetPasswordBtn">Quên mật khẩu</button>
             </div>
           </div>
         </div>
@@ -747,6 +839,45 @@ function renderProfile() {
         </div>
       </aside>
     </div>
+
+    <section class="panel profile-insights">
+      <div>
+        <h2>Lịch sử luyện tập</h2>
+        <p class="muted">${currentUser ? "Lưu trên Firebase theo tài khoản đang đăng nhập." : "Đăng nhập để đồng bộ lịch sử giữa nhiều thiết bị."}</p>
+      </div>
+      <div class="history-grid">
+        <div>
+          <h3>12 lượt gần nhất</h3>
+          <ul class="mini-list">
+            ${attempts.length ? attempts.map((attempt) => `
+              <li class="leader-row">
+                <strong>${attempt.percent}%</strong>
+                <span>
+                  <strong>${attempt.mode}</strong><br>
+                  <span class="muted">${attempt.rank} · ${attempt.score}/${attempt.total} · ${attempt.elapsed}s · ${attempt.date}</span>
+                </span>
+                <span class="chip good">+${attempt.xpGain || 0} XP</span>
+              </li>
+            `).join("") : `<li><span></span><span>Chưa có lịch sử chơi.</span><span></span></li>`}
+          </ul>
+        </div>
+        <div>
+          <h3>Điểm mạnh/yếu theo chủ đề</h3>
+          <div class="category-meter">
+            ${Object.keys(aggregateStats).length ? Object.entries(aggregateStats).map(([category, stat]) => {
+              const value = percent(stat.correct, stat.total);
+              return `
+                <div class="meter-row">
+                  <span>${CATEGORIES[category]}</span>
+                  <div class="meter"><span style="width:${value}%"></span></div>
+                  <strong>${value}%</strong>
+                </div>
+              `;
+            }).join("") : `<p class="muted">Chưa đủ dữ liệu để phân tích.</p>`}
+          </div>
+        </div>
+      </div>
+    </section>
   `;
 
   document.querySelector("#saveProfile").addEventListener("click", async () => {
@@ -759,10 +890,12 @@ function renderProfile() {
 
   const loginBtn = document.querySelector("#loginBtn");
   const registerBtn = document.querySelector("#registerBtn");
+  const resetPasswordBtn = document.querySelector("#resetPasswordBtn");
   const logoutBtn = document.querySelector("#logoutBtn");
 
   if (loginBtn) loginBtn.addEventListener("click", () => handleAuth("login"));
   if (registerBtn) registerBtn.addEventListener("click", () => handleAuth("register"));
+  if (resetPasswordBtn) resetPasswordBtn.addEventListener("click", handlePasswordReset);
   if (logoutBtn) logoutBtn.addEventListener("click", async () => {
     await authApi.signOut(auth);
     currentUser = null;
@@ -774,6 +907,10 @@ function renderProfile() {
 
 async function renderLeaderboard() {
   currentView = "leaderboard";
+  if (unsubscribeLeaderboard) {
+    unsubscribeLeaderboard();
+    unsubscribeLeaderboard = null;
+  }
   app.innerHTML = `
     <section class="panel">
       <h2>Leaderboard</h2>
@@ -782,13 +919,37 @@ async function renderLeaderboard() {
   `;
 
   const entries = await getLeaderboardEntries();
+  renderLeaderboardEntries(entries);
 
+  if (db && firebaseApi) {
+    try {
+      const liveQuery = firebaseApi.query(
+        firebaseApi.collection(db, "leaderboard"),
+        firebaseApi.orderBy("percent", "desc"),
+        firebaseApi.limit(10)
+      );
+      unsubscribeLeaderboard = firebaseApi.onSnapshot(liveQuery, (snapshot) => {
+        const liveEntries = snapshot.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() }))
+          .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
+          .slice(0, 10);
+        renderLeaderboardEntries(liveEntries);
+      });
+    } catch (error) {
+      console.warn("Could not subscribe leaderboard realtime.", error);
+    }
+  }
+}
+
+function renderLeaderboardEntries(entries) {
+  if (currentView !== "leaderboard") return;
   app.innerHTML = `
     <section class="panel">
       <h2>Leaderboard</h2>
       <div class="chip-row">
         <span class="chip ${leaderboardMode === "firebase" ? "good" : "warn"}">${getLeaderboardLabel()}</span>
         <span class="chip">Top 10 điểm cao</span>
+        ${db ? `<span class="chip good">Realtime</span>` : ""}
       </div>
       <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này đồng bộ public bằng Firebase Firestore, người khác mở link cũng thấy chung." : "Chưa bật Firebase hoặc Firebase đang lỗi, hệ thống đang dùng bảng điểm local trên thiết bị này."}</p>
       <ul class="mini-list" style="margin-top: 18px;">

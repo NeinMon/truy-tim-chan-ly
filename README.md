@@ -14,6 +14,10 @@ Sản phẩm là một nền tảng mini học tập có thể tái sử dụng,
 - Đăng ký/đăng nhập bằng Firebase Authentication
 - Hồ sơ người chơi lưu ở Firestore theo tài khoản
 - Leaderboard public bằng Firebase Firestore
+- Leaderboard realtime bằng Firestore listener
+- Lịch sử lượt chơi lưu trong `users/{uid}/attempts`
+- Thống kê cá nhân theo chủ đề từ lịch sử luyện tập
+- Quên mật khẩu qua Firebase Authentication
 - Fallback leaderboard local nếu chưa cấu hình Firebase
 - Achievement sau mỗi lượt chơi
 - Analytics mini theo chủ đề sai/đúng
@@ -57,6 +61,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
       allow read, create, update: if request.auth != null && request.auth.uid == userId;
+
+      match /attempts/{attemptId} {
+        allow read, create: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     match /leaderboard/{docId} {
