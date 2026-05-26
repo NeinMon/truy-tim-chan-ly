@@ -1,3 +1,8 @@
+let db = null;
+let leaderboardMode = "local";
+let firebaseApi = null;
+const firebaseSettings = window.TRUTH_FIREBASE_SETTINGS || { enabled: false, config: {} };
+
 const QUESTION_BANK = [
   ["sensory", "Bạn thấy một video viral có hàng triệu lượt xem. Bạn tin ngay vì nhiều người xem chắc đúng. Đây là gì?", ["Nhận thức lý tính", "Chân lý tuyệt đối", "Nhận thức cảm tính", "Thực tiễn kiểm nghiệm"], 2, "Đây là phản ứng dựa vào hiện tượng ban đầu và tác động trực tiếp của cảm giác, chưa phân tích bản chất."],
   ["sensory", "Một bài đăng có hình ảnh gây sốc khiến bạn lập tức tức giận. Trạng thái này chủ yếu thuộc giai đoạn nào?", ["Nhận thức cảm tính", "Suy lý khoa học", "Chân lý khách quan", "Khái niệm"], 0, "Cảm xúc và ấn tượng trực tiếp là biểu hiện của nhận thức cảm tính."],
@@ -91,6 +96,41 @@ let selectedMode = MODES[3].id;
 let selectedCategory = "all";
 let quiz = null;
 
+function hasFirebaseConfig() {
+  const config = firebaseSettings?.config || {};
+  return Boolean(
+    firebaseSettings?.enabled &&
+    config.apiKey &&
+    config.projectId &&
+    !String(config.apiKey).includes("YOUR_") &&
+    !String(config.projectId).includes("YOUR_")
+  );
+}
+
+async function initFirebase() {
+  if (!hasFirebaseConfig()) return;
+
+  try {
+    const [appModule, firestoreModule] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js")
+    ]);
+
+    firebaseApi = firestoreModule;
+    const appInstance = appModule.initializeApp(firebaseSettings.config);
+    db = firestoreModule.getFirestore(appInstance);
+    leaderboardMode = "firebase";
+  } catch (error) {
+    console.warn("Firebase init failed, using local leaderboard.", error);
+    db = null;
+    leaderboardMode = "local";
+  }
+}
+
+function getLeaderboardLabel() {
+  return leaderboardMode === "firebase" ? "Leaderboard public Firebase" : "Leaderboard local";
+}
+
 function load(key, fallback) {
   try {
     return JSON.parse(localStorage.getItem(key)) || fallback;
@@ -101,6 +141,66 @@ function load(key, fallback) {
 
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+async function saveLeaderboardResult(result) {
+  const normalizedResult = {
+    name: result.name.slice(0, 28),
+    className: (profile.className || "").slice(0, 36),
+    mode: result.mode,
+    score: result.score,
+    total: result.total,
+    percent: result.percent,
+    rank: result.rank,
+    elapsed: result.elapsed,
+    date: result.date,
+    createdAtMs: Date.now()
+  };
+
+  if (db) {
+    try {
+      await firebaseApi.addDoc(firebaseApi.collection(db, "leaderboard"), {
+        ...normalizedResult,
+        createdAt: firebaseApi.serverTimestamp()
+      });
+      return;
+    } catch (error) {
+      console.warn("Could not save Firebase leaderboard result, using local fallback.", error);
+      leaderboardMode = "local";
+    }
+  }
+
+  leaderboard.unshift(normalizedResult);
+  leaderboard = leaderboard
+    .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || b.createdAtMs - a.createdAtMs)
+    .slice(0, 20);
+  save("truthLeaderboard", leaderboard);
+}
+
+async function getLeaderboardEntries() {
+  if (db) {
+    try {
+      const snapshot = await firebaseApi.getDocs(
+        firebaseApi.query(
+          firebaseApi.collection(db, "leaderboard"),
+          firebaseApi.orderBy("percent", "desc"),
+          firebaseApi.limit(30)
+        )
+      );
+      return snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
+        .slice(0, 10);
+    } catch (error) {
+      console.warn("Could not load Firebase leaderboard, using local fallback.", error);
+      leaderboardMode = "local";
+    }
+  }
+
+  leaderboard = load("truthLeaderboard", []);
+  return leaderboard
+    .sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed || (b.createdAtMs || 0) - (a.createdAtMs || 0))
+    .slice(0, 10);
 }
 
 function shuffle(items) {
@@ -183,7 +283,7 @@ function renderHome() {
           <span class="chip good">50 câu hỏi</span>
           <span class="chip">5 chủ đề</span>
           <span class="chip">Random mỗi lượt</span>
-          <span class="chip warn">Leaderboard local</span>
+          <span class="chip warn">${getLeaderboardLabel()}</span>
         </div>
         <div class="hero-actions">
           <button class="primary-btn" id="quickStart">Bắt đầu chơi</button>
@@ -311,7 +411,7 @@ function chooseAnswer(answerIndex) {
   document.querySelector("#nextQuestion").disabled = false;
 }
 
-function finishQuiz() {
+async function finishQuiz() {
   const elapsed = Math.max(1, Math.round((Date.now() - quiz.startedAt) / 1000));
   const scorePercent = percent(quiz.score, quiz.questions.length);
   const xpGain = quiz.score * 12 + (scorePercent >= 80 ? 25 : 0);
@@ -331,9 +431,7 @@ function finishQuiz() {
   profile.plays += 1;
   save("truthProfile", profile);
 
-  leaderboard.unshift(result);
-  leaderboard = leaderboard.sort((a, b) => b.percent - a.percent || a.elapsed - b.elapsed).slice(0, 10);
-  save("truthLeaderboard", leaderboard);
+  await saveLeaderboardResult(result);
   syncHud();
   renderResult(result, xpGain);
 }
@@ -484,18 +582,31 @@ function renderProfile() {
   });
 }
 
-function renderLeaderboard() {
+async function renderLeaderboard() {
   app.innerHTML = `
     <section class="panel">
       <h2>Leaderboard</h2>
-      <p class="muted">Bảng xếp hạng lưu trên thiết bị này, phù hợp khi demo trên lớp hoặc deploy GitHub Pages không cần backend.</p>
+      <p class="muted">Đang tải ${getLeaderboardLabel().toLowerCase()}...</p>
+    </section>
+  `;
+
+  const entries = await getLeaderboardEntries();
+
+  app.innerHTML = `
+    <section class="panel">
+      <h2>Leaderboard</h2>
+      <div class="chip-row">
+        <span class="chip ${leaderboardMode === "firebase" ? "good" : "warn"}">${getLeaderboardLabel()}</span>
+        <span class="chip">Top 10 điểm cao</span>
+      </div>
+      <p class="muted" style="margin-top: 12px;">${leaderboardMode === "firebase" ? "Bảng xếp hạng này đồng bộ public bằng Firebase Firestore, người khác mở link cũng thấy chung." : "Chưa bật Firebase hoặc Firebase đang lỗi, hệ thống đang dùng bảng điểm local trên thiết bị này."}</p>
       <ul class="mini-list" style="margin-top: 18px;">
-        ${leaderboard.length ? leaderboard.map((item, index) => `
+        ${entries.length ? entries.map((item, index) => `
           <li class="leader-row">
             <strong>#${index + 1}</strong>
             <span>
               <strong>${escapeHtml(item.name)}</strong><br>
-              <span class="muted">${item.mode} · ${item.rank} · ${item.elapsed}s · ${item.date}</span>
+              <span class="muted">${item.className ? `${escapeHtml(item.className)} · ` : ""}${item.mode} · ${item.rank} · ${item.elapsed}s · ${item.date}</span>
             </span>
             <strong>${item.percent}%</strong>
           </li>
@@ -503,18 +614,26 @@ function renderLeaderboard() {
       </ul>
       <div class="row-actions">
         <button class="primary-btn" id="leaderPlay">Chơi để ghi điểm</button>
-        <button class="secondary-btn" id="clearLeader">Xóa leaderboard</button>
+        ${leaderboardMode === "local" ? `<button class="secondary-btn" id="clearLeader">Xóa leaderboard local</button>` : ""}
       </div>
     </section>
   `;
 
   document.querySelector("#leaderPlay").addEventListener("click", startQuiz);
-  document.querySelector("#clearLeader").addEventListener("click", () => {
-    leaderboard = [];
-    save("truthLeaderboard", leaderboard);
-    renderLeaderboard();
-  });
+  const clearButton = document.querySelector("#clearLeader");
+  if (clearButton) {
+    clearButton.addEventListener("click", () => {
+      leaderboard = [];
+      save("truthLeaderboard", leaderboard);
+      renderLeaderboard();
+    });
+  }
 }
 
-syncHud();
-renderHome();
+async function boot() {
+  await initFirebase();
+  syncHud();
+  renderHome();
+}
+
+boot();
